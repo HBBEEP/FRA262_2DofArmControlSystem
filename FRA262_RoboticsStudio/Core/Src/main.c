@@ -41,11 +41,15 @@
 
 /* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim5;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+int32_t QEIReadRaw;
+uint8_t motorDirection = 1;
+uint16_t duty = 250;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -53,8 +57,10 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_TIM5_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
-
+void setMotor();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -92,9 +98,15 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_TIM1_Init();
+  MX_TIM5_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+  	HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_1 | TIM_CHANNEL_2);
+
+  	HAL_TIM_Base_Start(&htim1);
 	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
+	HAL_TIM_Base_Start_IT(&htim2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -220,6 +232,100 @@ static void MX_TIM1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 9999;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 9;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
+  * @brief TIM5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM5_Init(void)
+{
+
+  /* USER CODE BEGIN TIM5_Init 0 */
+
+  /* USER CODE END TIM5_Init 0 */
+
+  TIM_Encoder_InitTypeDef sConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM5_Init 1 */
+
+  /* USER CODE END TIM5_Init 1 */
+  htim5.Instance = TIM5;
+  htim5.Init.Prescaler = 0;
+  htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim5.Init.Period = 4294967295;
+  htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC1Filter = 0;
+  sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC2Filter = 0;
+  if (HAL_TIM_Encoder_Init(&htim5, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim5, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM5_Init 2 */
+
+  /* USER CODE END TIM5_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -300,17 +406,36 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	if (htim == &htim2)
+	{
+		QEIReadRaw = __HAL_TIM_GET_COUNTER(&htim5);
+		setMotor();
+	}
+}
+
 void setMotor()
 {
 	if (motorDirection)
 	{
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET);
 	}
 	else
 	{
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_RESET);
 	}
 	__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, duty);
+}
+
+void positionControl()
+{
+
+}
+
+void velocityControl()
+{
+
 }
 /* USER CODE END 4 */
 
