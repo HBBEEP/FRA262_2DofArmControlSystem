@@ -60,6 +60,7 @@ static void MX_TIM1_Init(void);
 static void MX_TIM5_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
+void readEncoder();
 void setMotor();
 /* USER CODE END PFP */
 
@@ -410,7 +411,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim == &htim2)
 	{
-		QEIReadRaw = __HAL_TIM_GET_COUNTER(&htim5);
+		readEncoder();
 		setMotor();
 	}
 }
@@ -428,6 +429,10 @@ void setMotor()
 	__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, duty);
 }
 
+void readEncoder()
+{
+	QEIReadRaw = __HAL_TIM_GET_COUNTER(&htim5);
+}
 void positionControl()
 {
 
