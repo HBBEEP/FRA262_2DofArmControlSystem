@@ -47,6 +47,16 @@ TIM_HandleTypeDef htim5;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+
+struct pidVariables {
+  uint16_t pTerm;
+  uint16_t iTerm;
+  uint16_t dTerm;
+};
+
+struct pidVariables positionPID = {0,0,0};
+struct pidVariables velocityPID = {0,0,0};
+
 int32_t QEIReadRaw;
 uint8_t motorDirection = 1;
 uint16_t duty = 250;
@@ -62,6 +72,8 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 void readEncoder();
 void setMotor();
+void positionControl();
+void velocityControl();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -108,6 +120,8 @@ int main(void)
 	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
 	HAL_TIM_Base_Start_IT(&htim2);
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -414,6 +428,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		readEncoder();
 		setMotor();
 	}
+	if (htim == &htim)
 }
 
 void setMotor()
@@ -441,6 +456,7 @@ void positionControl()
 void velocityControl()
 {
 
+	//duty = (kp * errorPosition) + (ki * eintegral);
 }
 /* USER CODE END 4 */
 
