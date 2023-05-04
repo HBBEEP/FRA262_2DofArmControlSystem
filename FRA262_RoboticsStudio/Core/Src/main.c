@@ -72,7 +72,10 @@ struct pidVariables velocityPID = { 0, 0, 0 };
 
 int32_t QEIReadRaw;
 uint8_t motorDirection = 1;
-uint16_t duty = 250;
+uint16_t duty = 0;
+uint8_t aButton;
+uint16_t refXPos = 2000;
+uint8_t test = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -90,6 +93,7 @@ void readEncoder();
 void setMotor();
 void positionControl();
 void velocityControl();
+void handleJoystick();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -140,9 +144,12 @@ int main(void)
 
 	HAL_TIM_Base_Start_IT(&htim2);
 
+	HAL_ADC_Start_DMA(&hadc1, (uint16_t*) buffer, 20);
+
 	lcd_init();
 	lcd_clear();
-	HAL_ADC_Start_DMA(&hadc1, (uint16_t*) buffer, 20);
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -151,8 +158,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		lcd_put_cur(0, 0);
-		lcd_send_string("Hello Studio");
+		aButton = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_4);
+		handleJoystick();
+
 	}
   /* USER CODE END 3 */
 }
@@ -535,6 +543,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PA4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -558,6 +572,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim == &htim2) {
 		readEncoder();
 		setMotor();
+		//handleJoystick();
+
 	}
 }
 
@@ -580,6 +596,30 @@ void positionControl() {
 void velocityControl() {
 
 	//duty = (kp * errorPosition) + (ki * eintegral);
+}
+
+void handleJoystick() {
+	refXPos = buffer[0].subdata.xAxis;
+	if (refXPos > 2500) {
+		motorDirection = 1;
+	} else if (refXPos < 1500) {
+		motorDirection = 0;
+	}
+	if (refXPos > 3900 || refXPos < 100) {
+		duty = 500;
+	} else if (refXPos > 2500 && refXPos <= 3900) {
+		duty = 200;
+	}
+
+	else if (refXPos > 100 && refXPos <= 1500) {
+		duty = 200;
+	} else {
+		duty = 0;
+	}
+}
+
+void HAL_ADC_ConvCallback(ADC_HandleTypeDef *hadc) {
+
 }
 /* USER CODE END 4 */
 
