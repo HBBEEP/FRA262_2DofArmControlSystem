@@ -55,12 +55,19 @@ struct PortPin {
 	uint16_t PIN;
 };
 
+struct PortPin joyPin[5] = { { GPIOC, GPIO_PIN_2 }, // Button A
+		{ GPIOA, GPIO_PIN_4 }, // Button B
+		{ GPIOB, GPIO_PIN_0 }, // Button C
+		{ GPIOB, GPIO_PIN_7 }, // Button D
+		{ GPIOC, GPIO_PIN_10 } // Button K
+};
+
 struct _GPIOState {
 	GPIO_PinState Current;
 	GPIO_PinState Last;
 };
 
-struct _GPIOState Button1[4];
+struct _GPIOState Button1[5];
 typedef union {
 	struct {
 		uint16_t xAxis;
@@ -69,23 +76,48 @@ typedef union {
 } DMA_ADC_BufferType;
 DMA_ADC_BufferType buffer[10];
 
-struct pidVariables {
-	uint16_t pTerm;
-	uint16_t iTerm;
-	uint16_t dTerm;
-};
-
-struct pidVariables positionPID = { 0, 0, 0 };
-struct pidVariables velocityPID = { 0, 0, 0 };
-
 int32_t QEIReadRaw;
+int32_t vel_1;
+int32_t vel_2;
+int32_t diffVel;
 uint8_t motorDirection = 1;
-uint16_t duty = 0;
+float duty = 0;
 uint8_t aButton;
-uint16_t refXPos = 2000;
+float refXPos = 2000;
 uint8_t count = 0;
 
+// PID ---------------------
+struct pidVariables {
+	float pTerm;
+	float iTerm;
+	float dTerm;
+};
+
+struct pidVariables positionPID = { 1, 0, 0 };
+struct pidVariables velocityPID = { 0, 0, 0 };
+
+float mmActPos = 0;
+float mmTargetPos = 0;
+float mmError = 0;
+float eIntegral = 0;
+// -------------------------
+
+// SENSOR ------------------
 uint8_t photoSig[3];
+// -------------------------
+
+// TRAJ --------------------
+typedef struct {
+	float posTraj;
+	float velTraj;
+} calculationTraj;
+uint8_t qddm = 210;
+uint8_t qdm = 189;
+uint8_t qf = 0;
+
+// -------------------------
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -103,8 +135,13 @@ void setMotor();
 void positionControl();
 void velocityControl();
 void handleJoystick();
-void buttonHandle();
+void handleJoystick2();
+void buttonInput();
+void buttonLogic();
 void photoDetect();
+void calVelocity();
+calculationTraj trapezoidalTraj(uint16_t actualTime);
+float kalmanFilter();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -164,7 +201,13 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		buttonHandle();
+		static uint32_t timestamp = 0;
+		if (HAL_GetTick() >= timestamp) {
+			timestamp = HAL_GetTick() + 50;
+			//buttonInput();
+			//buttonLogic();
+
+		}
 
 	}
   /* USER CODE END 3 */
@@ -411,7 +454,7 @@ static void MX_TIM5_Init(void)
   htim5.Init.Period = 4294967295;
   htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
@@ -514,6 +557,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : PC2 PC10 */
+  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_10;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
   /*Configure GPIO pin : PA4 */
   GPIO_InitStruct.Pin = GPIO_PIN_4;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
@@ -526,6 +575,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PB0 PB7 PB9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_7|GPIO_PIN_9;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PC6 */
   GPIO_InitStruct.Pin = GPIO_PIN_6;
@@ -541,12 +596,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PB9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_9;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
 }
@@ -554,10 +603,12 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim == &htim2) {
+		vel_1 = QEIReadRaw;
 		readEncoder();
-		setMotor();
-		//handleJoystick();
-		photoDetect();
+		positionControl();
+		//photoDetect();
+		vel_2 = QEIReadRaw;
+		calVelocity();
 	}
 }
 
@@ -574,12 +625,35 @@ void readEncoder() {
 	QEIReadRaw = __HAL_TIM_GET_COUNTER(&htim5);
 }
 void positionControl() {
-
+	// float actualPosition = QEIReadRaw;
+	// mmActPos = QEIReadRaw * (2*3.14159*11.205/8192);
+	mmActPos = QEIReadRaw * (2*3.14159*11.205/80);
+	mmError = mmTargetPos - mmActPos;
+	eIntegral = eIntegral + (mmError * 0.0001);
+	duty = (positionPID.pTerm * mmError) + (positionPID.iTerm * eIntegral);
+	if (duty < 0)
+	{
+		motorDirection = 0;
+		duty = (-1) * duty;
+	}
+	else
+	{
+		motorDirection = 1;
+	}
+	if (duty > 1000)
+	{
+		duty = 1000;
+	}
+	else if (duty <= 120)
+	{
+		duty = 0;
+	}
+	setMotor();
 }
 
 void velocityControl() {
 
-	//duty = (kp * errorPosition) + (ki * eintegral);
+
 }
 
 void handleJoystick() {
@@ -589,9 +663,9 @@ void handleJoystick() {
 	} else if (refXPos < 1500) {
 		motorDirection = 0;
 	}
-	if (refXPos > 3900 || refXPos < 100) {
+	if (refXPos > 3600 || refXPos < 100) {
 		duty = 500;
-	} else if (refXPos > 2500 && refXPos <= 3900) {
+	} else if (refXPos > 2500 && refXPos <= 3600) {
 		duty = 200;
 	}
 
@@ -602,15 +676,38 @@ void handleJoystick() {
 	}
 }
 
-void buttonHandle() {
-
-	Button1[0].Current = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_4);
-	if (Button1[0].Last == 0 && Button1[0].Current == 1) {
-		count += 1;
+void handleJoystick2() {
+	refXPos = buffer[0].subdata.xAxis;
+	if (refXPos > 2500) {
+		motorDirection = 1;
+	} else if (refXPos < 1500) {
+		motorDirection = 0;
+	}
+	if (refXPos > 3600 || refXPos < 100) {
+		duty = 100;
+	} else if (refXPos > 2500 && refXPos <= 3600) {
+		duty = 60;
 	}
 
-	Button1[0].Last = Button1[0].Current;
+	else if (refXPos > 100 && refXPos <= 1500) {
+		duty = 60;
+	} else {
+		duty = 0;
+	}
+}
 
+void buttonInput() {
+	register int i;
+	for (i = 0; i < 5; i++) {
+		Button1[i].Current = HAL_GPIO_ReadPin(joyPin[i].PORT, joyPin[i].PIN);
+		if (Button1[i].Last == 0 && Button1[i].Current == 1) {
+			count += 1;
+		}
+		Button1[i].Last = Button1[i].Current;
+	}
+}
+
+void buttonLogic() {
 	switch (count % 2) {
 	case 0:
 		handleJoystick();
@@ -618,15 +715,69 @@ void buttonHandle() {
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_SET);
 		break;
 	case 1:
+		handleJoystick2();
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_RESET);
 		break;
 	}
+
+	if (count > 200) {
+		count = 0;
+	}
 }
 
-void photoDetect()
-{
+void calVelocity() {
+	diffVel = vel_2 - vel_1;
+}
+
+void photoDetect() {
 	photoSig[0] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9);
+	// 	photoSig[0] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9);
+	// photoSig[0] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9);
+}
+
+float kalmanFilter() {
+//	double K = 0;
+	double x = 0;
+//	double P = 0;
+//	double P_pre = 0;
+//	double R = 0;
+//	double C = 1;
+//	double Q = 0;
+//
+//	P_pre = P + Q;
+//	K = (P_pre * C) / ((C * P_pre * C) + R);
+//	x = x + K * (y - C * x);
+//	P = (1 - (K * C) * P_pre);
+	return x;
+}
+calculationTraj trapezoidalTraj(uint16_t actualTime) {
+	calculationTraj result;
+
+	float timeSeg1 = qdm / qddm;
+	float timeSeg2 = (qf - (2 * 0.5 * qddm * (timeSeg1) * (timeSeg1))) / qdm;
+	float timeSeg3 = qdm / qddm;
+	float qSeg1 = 0.5 * qddm * (timeSeg1) * (timeSeg1);
+	float qSeg2 = qSeg1 + (qdm * timeSeg2);
+
+	if (actualTime <= timeSeg1) {
+		result.posTraj = 0.5 * qddm * actualTime * actualTime;
+		result.velTraj = qddm * actualTime;
+	} else if (actualTime > timeSeg1 && actualTime <= timeSeg2 + timeSeg1) {
+		float t2 = actualTime - timeSeg1;
+		result.posTraj = qSeg1 + qdm * (t2);
+		result.velTraj = qdm;
+
+	} else if (actualTime > timeSeg2 + timeSeg1
+			&& actualTime <= timeSeg3 + timeSeg2 + timeSeg1) {
+		float t3 = actualTime - timeSeg2 - timeSeg1;
+		result.posTraj = qSeg2 + (qdm * t3) - 0.5 * qddm * t3 * t3;
+		result.velTraj =  -qddm * t3 + qdm;
+	} else {
+		result.posTraj = qf;
+		result.velTraj = 0;
+	}
+	return result;
 }
 void HAL_ADC_ConvCallback(ADC_HandleTypeDef *hadc) {
 
