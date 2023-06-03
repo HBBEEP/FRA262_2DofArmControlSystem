@@ -110,7 +110,7 @@ struct pidVariables {
 	float eIntegral;
 };
 
-struct pidVariables positionPID = { 35, 0, 0, 0 };
+struct pidVariables positionPID = { 155, 75, 0, 0 };
 struct pidVariables velocityPID = { 0, 0, 0, 0 };
 
 float mmActPos = 0;
@@ -228,7 +228,7 @@ void setMotor();
 void cascadePIDControl();
 float positionLoop(float targetPos);
 void velocityLoop(float targetVel, float velFromPID);
-void handleJoystick();
+
 void buttonInput();
 void buttonLogic(uint16_t state);
 void photoDetect();
@@ -797,7 +797,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		robotArmState(registerFrame[1].U16);
 		readEncoder();
 
-		if (photoSig[0] || photoSig[2]) // Motor Photo Sensor
+		if (photoSig[0] || photoSig[2]) // Motor Photo Sensor : SOFTWARELIMIT
 				{
 			duty = 0;
 			setMotor();
@@ -881,9 +881,6 @@ float positionLoop(float targetPos) {
 	mmActPos = QEIReadRaw * (2 * 3.14159 * 11.205 / 8192);
 	mmActVel = (mmActPos - prePos) / 0.01;
 
-//	mmActPos = kalmanFilter(mmActPos);
-//	mmActVel = kalmanFilter(mmActVel);
-
 	mmError = targetPos - mmActPos;
 	positionPID.eIntegral = positionPID.eIntegral + (mmError * 0.01);
 	pidVel = (positionPID.pTerm * mmError)
@@ -917,9 +914,6 @@ void onlyPositionControl(float initPos, float targetPos) {
 	mmActVel = (mmActPos - prePos) / 0.001;
 	mmActAcc = (mmActVel - preVel) / 0.001;
 
-	//mmActPos = kalmanFilter(mmActPos);
-	//mmActVel = kalmanFilter(mmActVel);
-
 	mmError = result.posTraj - mmActPos;
 	positionPID.eIntegral = positionPID.eIntegral + (mmError * 0.001);
 	duty = (positionPID.pTerm * mmError)
@@ -940,25 +934,6 @@ void onlyPositionControl(float initPos, float targetPos) {
 	setMotor();
 }
 
-void handleJoystick() {
-	refYPos = buffer[0].subdata.yAxis;
-	if (refYPos > 2500) {
-		dirAxisY = 1;
-	} else if (refYPos < 1500) {
-		dirAxisY = 0;
-	}
-	if (refYPos > 3600 || refYPos < 100) {
-		duty = 500;
-	} else if (refYPos > 2500 && refYPos <= 3600) {
-		duty = 300;
-	}
-
-	else if (refYPos > 100 && refYPos <= 1500) {
-		duty = 300;
-	} else {
-		duty = 0;
-	}
-}
 
 void jogAxisY() {
 	refYPos = buffer[0].subdata.yAxis;
@@ -1062,6 +1037,14 @@ calculationTraj trapezoidalTraj(float qi, float qf) {
 	checkPos = result.posTraj;
 	checkVel = result.velTraj;
 	checkAcc = result.accTraj;
+
+	int16_t sentPos = mmActPos * 10;
+	int16_t sentVel = mmActVel * 10;
+	int16_t sentAcc = mmActAcc * 10;
+	registerFrame[17].U16 = sentPos;
+	registerFrame[18].U16 = sentVel;
+	registerFrame[19].U16 = sentAcc;
+
 	actualTime += 0.001;
 	if (result.posTraj == qf) {
 		result.reachTraj = 1;
@@ -1283,38 +1266,33 @@ void robotArmState(uint16_t state) {
 		buttonLogic(joyLogic);
 		break;
 	case 0b0000000000000100: // HOME
-		registerFrame[1].U16 = 0;
-		registerFrame[16].U16 = 0b0000000000000100;
-		startSetHome = 1;
-
-		registerFrame[64].U16 = 0b0000000000000001;
-		// registerFrame[16].U16 = 0;
-
+		registerFrame[1].U16 = 0; // RESET : Base System Status
+		registerFrame[16].U16 = 0b0000000000000100; // HOME : y-axis Moving Status
+		registerFrame[64].U16 = 0b0000000000000001; // HOME : x-axis Moving Status
+		startSetHome = 1; // START HOME -> Function
 		break;
 	case 0b0000000000001000: // RUN TRAY MODE
 		// 18 PATH
 		break;
 	case 0b0000000000010000: // RUN POINT MODE
 		// POSITION
-		registerFrame[1].U16 = 0; // RESET BASE SYSTEM STATUS
+		registerFrame[1].U16 = 0; // RESET: Base System Status
 
-		// : X-Point
-		registerFrame[65].U16 = registerFrame[48].U16; //  Read Target Position
-		registerFrame[66].U16 = 3000;
-		registerFrame[67].U16 = 1;
-		registerFrame[64].U16 = 2;
+		// X-Point
+		registerFrame[64].U16 = 2; // RUN : x-axis Moving Status
+		registerFrame[65].U16 = registerFrame[48].U16; // SET : x-axis Target Position = Read : Goal Point x
+		registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
+		registerFrame[67].U16 = 1; // SET : x-axis Target Speed
 
-		// : Y-Point
-		startPointModeY = 1;
+
+		// Y-Point
+		startPointModeY = 1; // START POINT MODE -> OnlyPositionControl Function
 		initPosY = QEIReadModified*(2 * 3.14159 * 11.205 / 8192);
 
-		registerFrame[16].U16 = 0b0000000000100000; // y-axis Moving Status : Go Point
+		registerFrame[16].U16 = 0b0000000000100000; // Go Point : y-axis Moving Status
 		registerFrame[17].U16 = mmActPos; // y-axis Actual Position
 		registerFrame[18].U16 = mmActVel; // y-axis Actual Speed
 		registerFrame[19].U16 = mmActAcc; // y-axis Actual Acceleration
-
-		// registerFrame[49].U16
-
 		break;
 	}
 }
@@ -1336,13 +1314,6 @@ void jogAxisX() {
 
 }
 
-
-void writeYAxisToBaseSys() {
-	registerFrame[16].U16 = 0b0000000000000001;
-	registerFrame[17].U16 = mmActPos;
-	registerFrame[18].U16 = mmActVel;
-	registerFrame[19].U16 = mmActAcc;
-}
 
 void HAL_ADC_ConvCallback(ADC_HandleTypeDef *hadc) {
 
