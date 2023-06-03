@@ -66,9 +66,9 @@ struct PortPin {
 };
 
 struct PortPin joyPin[4] = { { GPIOC, GPIO_PIN_2 }, // Button M
-		{ GPIOA, GPIO_PIN_4 }, // Button R / D
+		{ GPIOA, GPIO_PIN_4 }, // Button R / P
 		{ GPIOB, GPIO_PIN_0 }, // Button A / O
-		{ GPIOB, GPIO_PIN_7 }, // Button L / P
+		{ GPIOB, GPIO_PIN_7 }, // Button L / D
 		};
 
 struct _GPIOState {
@@ -76,7 +76,7 @@ struct _GPIOState {
 	GPIO_PinState Last;
 };
 
-struct _GPIOState Button1[5];
+struct _GPIOState Button1[4];
 typedef union {
 	struct {
 		uint16_t xAxis;
@@ -89,13 +89,18 @@ float refXPos = 2000;
 float refYPos = 2000;
 uint8_t countBottomB = 0;
 uint8_t countTopB = 0;
-uint8_t countRightB = 0;
+int8_t countRightB = 0;
 uint8_t countLeftB = 0;
+
+uint8_t switchAxis = 1;
 // MOTOR -------------------
 float duty = 0;
-uint8_t motorDir = 1;
+uint8_t dirAxisY = 1;
+uint8_t dirAxisX = 1;
 // ENCODER -----------------
 int32_t QEIReadRaw;
+int32_t QEIReadModified;
+int32_t QEIHome;
 
 // PID ---------------------
 struct pidVariables {
@@ -105,7 +110,7 @@ struct pidVariables {
 	float eIntegral;
 };
 
-struct pidVariables positionPID = { 0, 0, 0, 0 };
+struct pidVariables positionPID = { 35, 0, 0, 0 };
 struct pidVariables velocityPID = { 0, 0, 0, 0 };
 
 float mmActPos = 0;
@@ -185,11 +190,13 @@ float preVel = 0;
 float pidVel = 0;
 
 // Home State
-typedef enum {
-	INIT, HOMING, REACHHOME, PHOTODETECT
-} homeState;
+uint8_t myHomeState = 0;
+uint8_t startSetHome = 1;
 
-uint8_t dirAxisX = 1;
+uint8_t joyJog = 1;
+uint8_t joyFine = 1;
+
+uint8_t joyLogic = 0;
 
 // Test Start ------------
 uint8_t startTraj = 0; // TRACK 18 path (Only Position)
@@ -197,6 +204,11 @@ uint8_t startKalman = 0; // Lab Kalman
 uint8_t startOnlyPosControl = 0; // Feedback From
 uint8_t startCascadeControl = 0; // Feedback From Sensor
 uint8_t startJoyStick = 0; // Start JoyStick
+
+int16_t testVar = 0;
+uint8_t startPointModeY = 0;
+int32_t initPosY;
+int16_t targetPos = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -217,7 +229,6 @@ void cascadePIDControl();
 float positionLoop(float targetPos);
 void velocityLoop(float targetVel, float velFromPID);
 void handleJoystick();
-void handleJoystick2();
 void buttonInput();
 void buttonLogic(uint16_t state);
 void photoDetect();
@@ -225,17 +236,20 @@ calculationTraj trapezoidalTraj(float initPos, float targetPos);
 float kalmanFilter(float y);
 void calibrateTrayTest();
 
-void setHome(homeState state);
-
+//void setHome(homeState state);
+void setHome();
 void onlyPositionControl(float initPos, float targetPos);
-void robotArmState(uint8_t state);
+void robotArmState(uint16_t state);
 
 // ------
 void calibrateTray(trayPos trayX, trayPos trayY, Point *objPos);
 Point rotatePoint(float p1, float p2, float centerX, float centerY, float angle);
-void jogMode();
+void jogAxisY();
+
+void jogAxisX();
 
 void kalmanLap();
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -307,7 +321,6 @@ int main(void) {
 			timestamp = HAL_GetTick() + 100;
 			registerFrame[0].U16 = 22881;
 
-			// 0b0000000000000000 16 zeros
 		}
 
 	}
@@ -781,28 +794,32 @@ static void MX_GPIO_Init(void) {
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim == &htim2) {
 		photoDetect();
+		robotArmState(registerFrame[1].U16);
 		readEncoder();
-		if (startQEI) {
-			readEncoder();
+
+		if (photoSig[0] || photoSig[2]) // Motor Photo Sensor
+				{
+			duty = 0;
+			setMotor();
 		}
 
-		if (startOnlyPosControl) {
-			//onlyPositionControl();
+		if (startSetHome) {
+			setHome();
 		}
 
-		if (startTraj) {
-			//onlyPositionControl();
+
+		if (startPointModeY)
+		{
+			targetPos = registerFrame[49].U16;
+			onlyPositionControl(initPosY, targetPos/ 10);
 		}
 
-		if (startCascadeControl) {
-			cascadePIDControl();
-		}
 
 	}
 }
 
 void setMotor() {
-	if (motorDir) {
+	if (dirAxisY) {
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET);
 	} else {
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_RESET);
@@ -812,6 +829,46 @@ void setMotor() {
 
 void readEncoder() {
 	QEIReadRaw = __HAL_TIM_GET_COUNTER(&htim5);
+	QEIReadModified = QEIReadRaw - QEIHome;
+}
+
+void setHome() {
+
+	switch (myHomeState) {
+	case 0:
+		if (photoSig[0]) // Motor Photo Sensor
+		{
+			myHomeState = 1;
+		} else // ANY Position
+		{
+			dirAxisY = 0;
+			duty = 220;
+			setMotor();
+			myHomeState = 1;
+		}
+		break;
+	case 1:
+		if (photoSig[0]) // Motor Photo Sensor
+		{
+			dirAxisY = 1;
+			duty = 220;
+			setMotor();
+		} else if (photoSig[1]) // Center Photo Sensor
+		{
+			myHomeState = 2;
+		}
+		break;
+	case 2:
+		duty = 0;
+		setMotor();
+		QEIHome = QEIReadRaw;
+		startSetHome = 0;
+		myHomeState = 0;
+		registerFrame[16].U16 = 0;
+		break;
+
+	}
+
 }
 
 void cascadePIDControl() {
@@ -840,10 +897,10 @@ void velocityLoop(float targetVel, float velFromPID) {
 	duty = (velocityPID.pTerm * velError)
 			+ (velocityPID.iTerm * velocityPID.eIntegral);
 	if (duty < 0) {
-		motorDir = 0;
+		dirAxisY = 0;
 		duty = (-1) * duty;
 	} else {
-		motorDir = 1;
+		dirAxisY = 1;
 	}
 	if (duty > 1000) {
 		duty = 1000;
@@ -856,22 +913,22 @@ void velocityLoop(float targetVel, float velFromPID) {
 
 void onlyPositionControl(float initPos, float targetPos) {
 	calculationTraj result = trapezoidalTraj(initPos, targetPos);
-	mmActPos = QEIReadRaw * (2 * 3.14159 * 11.205 / 8192);
-	mmActVel = (mmActPos - prePos) / 0.01;
-	mmActAcc = (mmActVel - preVel) / 0.01;
+	mmActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
+	mmActVel = (mmActPos - prePos) / 0.001;
+	mmActAcc = (mmActVel - preVel) / 0.001;
 
 	//mmActPos = kalmanFilter(mmActPos);
 	//mmActVel = kalmanFilter(mmActVel);
 
 	mmError = result.posTraj - mmActPos;
-	positionPID.eIntegral = positionPID.eIntegral + (mmError * 0.01);
+	positionPID.eIntegral = positionPID.eIntegral + (mmError * 0.001);
 	duty = (positionPID.pTerm * mmError)
 			+ (positionPID.iTerm * positionPID.eIntegral);
 	if (duty < 0) {
-		motorDir = 0;
+		dirAxisY = 0;
 		duty = (-1) * duty;
 	} else {
-		motorDir = 1;
+		dirAxisY = 1;
 	}
 	if (duty > 1000) {
 		duty = 1000;
@@ -884,146 +941,49 @@ void onlyPositionControl(float initPos, float targetPos) {
 }
 
 void handleJoystick() {
-	refXPos = buffer[0].subdata.xAxis;
-	if (refXPos > 2500) {
-		motorDir = 1;
-	} else if (refXPos < 1500) {
-		motorDir = 0;
+	refYPos = buffer[0].subdata.yAxis;
+	if (refYPos > 2500) {
+		dirAxisY = 1;
+	} else if (refYPos < 1500) {
+		dirAxisY = 0;
 	}
-	if (refXPos > 3600 || refXPos < 100) {
+	if (refYPos > 3600 || refYPos < 100) {
 		duty = 500;
-	} else if (refXPos > 2500 && refXPos <= 3600) {
+	} else if (refYPos > 2500 && refYPos <= 3600) {
 		duty = 300;
 	}
 
-	else if (refXPos > 100 && refXPos <= 1500) {
+	else if (refYPos > 100 && refYPos <= 1500) {
 		duty = 300;
 	} else {
 		duty = 0;
 	}
 }
 
-void handleJoystick2() {
-	refXPos = buffer[0].subdata.xAxis;
-	if (refXPos > 2500) {
-		motorDir = 1;
-	} else if (refXPos < 1500) {
-		motorDir = 0;
+void jogAxisY() {
+	refYPos = buffer[0].subdata.yAxis;
+	if (refYPos > 2500) {
+		dirAxisY = 1;
+	} else if (refYPos < 1500) {
+		dirAxisY = 0;
 	}
-	if (refXPos > 3600 || refXPos < 100) {
+	if (refYPos > 3600 || refYPos < 100) {
 		duty = 250;
-	} else if (refXPos > 2500 && refXPos <= 3600) {
+	} else if (refYPos > 2500 && refYPos <= 3600) {
 		duty = 200;
 	}
 
-	else if (refXPos > 100 && refXPos <= 1500) {
+	else if (refYPos > 100 && refYPos <= 1500) {
 		duty = 200;
 	} else {
 		duty = 0;
 	}
-}
-
-void buttonInput() {
-	register int i;
-	for (i = 0; i < 4; i++) {
-		Button1[i].Current = HAL_GPIO_ReadPin(joyPin[i].PORT, joyPin[i].PIN);
-		if (Button1[i].Last == 0 && Button1[i].Current == 1) {
-			if (i == 0) {
-				countTopB += 1;
-			} else if (i == 1) {
-				countRightB += 1;
-			} else if (i == 2) {
-				countBottomB += 1;
-
-			} else if (i == 3) {
-				countLeftB += 1;
-
-			}
-			buttonLogic(i);
-		}
-		Button1[i].Last = Button1[i].Current;
-	}
-}
-
-void buttonLogic(uint8_t state) {
-	if (countTopB % 2 == 0) {
-		switch (state) {
-		case 0:
-			// ENTER JOG MODE
-			jogMode();
-			if (dirAxisX = 1) {
-				registerFrame[64].U16 = 0b0000000000000100;
-			}
-			else
-			{
-				registerFrame[64].U16 = 0b0000000000001000;
-			}
-			break;
-		case 1:
-			// Right
-			state = 0;
-			break;
-		case 2:
-			// Change Axis of Movement
-			break;
-		case 3:
-			// Left
-			state = 0;
-			break;
-		}
-	}
-	if (countTopB % 2 == 1) {
-		//calibrateMode();
-		switch (state) {
-		case 0:
-			// ENTER JOG MODE
-			break;
-		case 1:
-			// Pick
-			trayPickX.pos1 = registerFrame[68].U16;
-			trayPickY.pos1 = mmActPos;
-
-			trayPickX.pos2 = registerFrame[68].U16;
-			;
-			trayPickY.pos2 = mmActPos;
-
-			trayPickX.pos3 = registerFrame[68].U16;
-			;
-			trayPickY.pos3 = mmActPos;
-
-			trayPlaceX.pos1 = registerFrame[68].U16;
-			;
-			trayPlaceY.pos1 = mmActPos;
-
-			trayPlaceX.pos2 = registerFrame[68].U16;
-			;
-			trayPlaceY.pos2 = mmActPos;
-
-			trayPlaceX.pos3 = registerFrame[68].U16;
-			;
-			trayPlaceY.pos3 = mmActPos;
-			break;
-		case 2:
-			// Open Laser
-			break;
-		case 3:
-			//  Delete
-			break;
-		}
-	}
-
-}
-
-void jogMode() {
-	handleJoystick2();
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_SET);
 }
 
 void photoDetect() {
 	photoSig[0] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5);  // Motor Photo Sensor
-	photoSig[1] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9); // CENTER Photo Sensor
-	photoSig[2] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_14);  // Encoder Photo Sensor
+	photoSig[1] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_14); // CENTER Photo Sensor
+	photoSig[2] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9);  // Encoder Photo Sensor
 }
 
 calculationTraj trapezoidalTraj(float qi, float qf) {
@@ -1102,10 +1062,13 @@ calculationTraj trapezoidalTraj(float qi, float qf) {
 	checkPos = result.posTraj;
 	checkVel = result.velTraj;
 	checkAcc = result.accTraj;
-	actualTime += 0.01;
+	actualTime += 0.001;
 	if (result.posTraj == qf) {
 		result.reachTraj = 1;
 		actualTime = 0;
+		startPointModeY = 0;
+		initPosY = mmActPos;
+		registerFrame[16].U16 = 0;
 	} else {
 		result.reachTraj = 0;
 	}
@@ -1201,20 +1164,178 @@ Point rotatePoint(float p1, float p2, float centerX, float centerY,
 	return rotatedPoint;
 }
 
+void buttonInput() {
+	register int i;
+	for (i = 0; i < 4; i++) {
+		Button1[i].Current = HAL_GPIO_ReadPin(joyPin[i].PORT, joyPin[i].PIN);
+		if (Button1[i].Last == 0 && Button1[i].Current == 1) {
+			if (i == 0) {
+				countTopB += 1;
+			}
+			if (i == 1) {
+				// countRightB += 1;
+			}
+			if (i == 2) {
+				countBottomB += 1;
+			}
+			if (i == 3) {
+				countLeftB += 1;
+
+			}
+			Button1[i].Last = Button1[i].Current;
+			joyLogic = i;
+		}
+		Button1[i].Last = Button1[i].Current;
+	}
+}
+
+void buttonLogic(uint16_t state) {
+	if (countTopB % 2 == 0) {
+		switch (state) {
+		case 0:
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_RESET);
+			// ENTER JOG MODE
+			if (switchAxis) {
+				jogAxisY();
+			} else {
+				jogAxisX();
+			}
+			break;
+		case 1:
+			// Right
+
+			joyLogic = 0;
+			break;
+		case 2:
+			// Change Axis of Movement
+			if (switchAxis) {
+				switchAxis = 0;
+			} else {
+				switchAxis = 1;
+			}
+			joyLogic = 0;
+			break;
+		case 3:
+			// Left
+
+			joyLogic = 0;
+
+			break;
+		}
+	}
+	if (countTopB % 2 == 1) {
+
+		switch (state) {
+		case 0:
+			// ENTER CALIBRATE MODE
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_SET);
+			break;
+		case 1:
+			// Pick
+			if (countRightB == 0) {
+				trayPickX.pos1 = registerFrame[68].U16;
+				trayPickY.pos1 = mmActPos;
+			} else if (countRightB == 1) {
+				trayPickX.pos2 = registerFrame[68].U16;
+				trayPickY.pos2 = mmActPos;
+			} else if (countRightB == 2) {
+				trayPickX.pos3 = registerFrame[68].U16;
+				trayPickY.pos3 = mmActPos;
+			} else if (countRightB == 3) {
+				trayPlaceX.pos1 = registerFrame[68].U16;
+				trayPlaceY.pos1 = mmActPos;
+			} else if (countRightB == 4) {
+				trayPlaceX.pos2 = registerFrame[68].U16;
+				trayPlaceY.pos2 = mmActPos;
+			} else if (countRightB == 5) {
+				trayPlaceX.pos3 = registerFrame[68].U16;
+				trayPlaceY.pos3 = mmActPos;
+			}
+			joyLogic = 0;
+			break;
+		case 2:
+			// Open Laser
+			joyLogic = 0;
+
+			break;
+		case 3:
+			//  Delete
+			countRightB -= 1;
+			joyLogic = 0;
+			break;
+		}
+	}
+
+}
+
+
+
 void robotArmState(uint16_t state) {
 	switch (state) {
 	case 0b0000000000000001: // SET PICK TRAY
+		buttonInput();
+		buttonLogic(joyLogic);
 		break;
 	case 0b0000000000000010: // SET PLACE TRAY
+		buttonInput();
+		buttonLogic(joyLogic);
 		break;
 	case 0b0000000000000100: // HOME
+		registerFrame[1].U16 = 0;
+		registerFrame[16].U16 = 0b0000000000000100;
+		startSetHome = 1;
+
+		registerFrame[64].U16 = 0b0000000000000001;
+		// registerFrame[16].U16 = 0;
+
 		break;
 	case 0b0000000000001000: // RUN TRAY MODE
+		// 18 PATH
 		break;
 	case 0b0000000000010000: // RUN POINT MODE
+		// POSITION
+		registerFrame[1].U16 = 0; // RESET BASE SYSTEM STATUS
+
+		// : X-Point
+		registerFrame[65].U16 = registerFrame[48].U16; //  Read Target Position
+		registerFrame[66].U16 = 3000;
+		registerFrame[67].U16 = 1;
+		registerFrame[64].U16 = 2;
+
+		// : Y-Point
+		startPointModeY = 1;
+		initPosY = QEIReadModified*(2 * 3.14159 * 11.205 / 8192);
+
+		registerFrame[16].U16 = 0b0000000000100000; // y-axis Moving Status : Go Point
+		registerFrame[17].U16 = mmActPos; // y-axis Actual Position
+		registerFrame[18].U16 = mmActVel; // y-axis Actual Speed
+		registerFrame[19].U16 = mmActAcc; // y-axis Actual Acceleration
+
+		// registerFrame[49].U16
+
 		break;
 	}
 }
+
+void jogAxisX() {
+		refXPos = buffer[0].subdata.xAxis;
+		if (refXPos > 2500) {
+			dirAxisX = 1;
+			registerFrame[64].U16 = 0b0000000000000100;
+		} else if (refXPos < 1500) {
+			dirAxisX = 0;
+			registerFrame[64].U16 = 0b0000000000001000;
+		}
+		else
+		{
+			registerFrame[64].U16 = 0;
+
+		}
+
+}
+
 
 void writeYAxisToBaseSys() {
 	registerFrame[16].U16 = 0b0000000000000001;
@@ -1222,48 +1343,7 @@ void writeYAxisToBaseSys() {
 	registerFrame[18].U16 = mmActVel;
 	registerFrame[19].U16 = mmActAcc;
 }
-void setHome(homeState state) {
-	switch (state) {
-	case INIT:
-		if (photoSig[0]) // Motor Photo Sensor
-		{
-			state = HOMING;
-		} else // ANY Position
-		{
-			motorDir = 0;
-			duty = 220;
-			setMotor();
-			state = HOMING;
-		}
-		break;
-	case HOMING:
-		if (photoSig[0]) // Motor Photo Sensor
-		{
-			motorDir = 1;
-			duty = 220;
-			setMotor();
-		} else if (photoSig[1]) // Center Photo Sensor
-		{
-			state = REACHHOME;
-		}
-		break;
-	case REACHHOME:
-		startQEI = 1;
-		duty = 0;
-		setMotor();
-		QEIReadRaw = 0;
-		state = PHOTODETECT;
-		break;
-	case PHOTODETECT:
-		if (photoSig[0] || photoSig[2]) // Motor Photo Sensor
-				{
-			duty = 0;
-			setMotor();
-		}
-		break;
-	}
 
-}
 void HAL_ADC_ConvCallback(ADC_HandleTypeDef *hadc) {
 
 }
