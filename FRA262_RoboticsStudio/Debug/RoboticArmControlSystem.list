@@ -27,23 +27,23 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   ALLOC
  11 .ARM.attributes 00000030  00000000  00000000  000202b8  2**0
                   CONTENTS, READONLY
- 12 .debug_info   0001220b  00000000  00000000  000202e8  2**0
+ 12 .debug_info   0001216c  00000000  00000000  000202e8  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 13 .debug_abbrev 00002256  00000000  00000000  000324f3  2**0
+ 13 .debug_abbrev 00002256  00000000  00000000  00032454  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 14 .debug_aranges 00000eb8  00000000  00000000  00034750  2**3
+ 14 .debug_aranges 00000eb8  00000000  00000000  000346b0  2**3
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 15 .debug_ranges 00000e00  00000000  00000000  00035608  2**3
+ 15 .debug_ranges 00000e00  00000000  00000000  00035568  2**3
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 16 .debug_macro  00017834  00000000  00000000  00036408  2**0
+ 16 .debug_macro  00017834  00000000  00000000  00036368  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_line   00010bfc  00000000  00000000  0004dc3c  2**0
+ 17 .debug_line   00010b31  00000000  00000000  0004db9c  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_str    0009ab8f  00000000  00000000  0005e838  2**0
+ 18 .debug_str    0009ab75  00000000  00000000  0005e6cd  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .comment      00000050  00000000  00000000  000f93c7  2**0
+ 19 .comment      00000050  00000000  00000000  000f9242  2**0
                   CONTENTS, READONLY
- 20 .debug_frame  000043b8  00000000  00000000  000f9418  2**2
+ 20 .debug_frame  000043b8  00000000  00000000  000f9294  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -3735,20 +3735,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
  8001dbe:	f000 f87d 	bl	8001ebc <setHome>
 		}
 
-
-		if (startPointModeY)
+		if (startPointModeY) {
  8001dc2:	4b19      	ldr	r3, [pc, #100]	; (8001e28 <HAL_TIM_PeriodElapsedCallback+0xb0>)
  8001dc4:	781b      	ldrb	r3, [r3, #0]
  8001dc6:	2b00      	cmp	r3, #0
  8001dc8:	d01f      	beq.n	8001e0a <HAL_TIM_PeriodElapsedCallback+0x92>
-		{
 			targetPos = registerFrame[49].U16;
  8001dca:	4b13      	ldr	r3, [pc, #76]	; (8001e18 <HAL_TIM_PeriodElapsedCallback+0xa0>)
  8001dcc:	f8b3 3062 	ldrh.w	r3, [r3, #98]	; 0x62
  8001dd0:	b21a      	sxth	r2, r3
  8001dd2:	4b16      	ldr	r3, [pc, #88]	; (8001e2c <HAL_TIM_PeriodElapsedCallback+0xb4>)
  8001dd4:	801a      	strh	r2, [r3, #0]
-			onlyPositionControl(initPosY, targetPos/ 10);
+			onlyPositionControl(initPosY, targetPos / 10);
  8001dd6:	4b16      	ldr	r3, [pc, #88]	; (8001e30 <HAL_TIM_PeriodElapsedCallback+0xb8>)
  8001dd8:	681b      	ldr	r3, [r3, #0]
  8001dda:	ee07 3a90 	vmov	s15, r3
@@ -3767,7 +3765,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
  8001e02:	eeb0 0a67 	vmov.f32	s0, s15
  8001e06:	f000 f8bb 	bl	8001f80 <onlyPositionControl>
 		}
-
 
 	}
 }
@@ -4184,7 +4181,6 @@ void onlyPositionControl(float initPos, float targetPos) {
  8002170:	42f00000 	.word	0x42f00000
 
 08002174 <jogAxisY>:
-
 
 void jogAxisY() {
  8002174:	b480      	push	{r7}
@@ -5320,7 +5316,7 @@ void buttonLogic(uint16_t state) {
  8002bdc:	08002c15 	.word	0x08002c15
  8002be0:	08002c1d 	.word	0x08002c1d
  8002be4:	08002c3b 	.word	0x08002c3b
-		case 0:
+		case 0: // ENTER JOG MODE
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
  8002be8:	2201      	movs	r2, #1
  8002bea:	f44f 6100 	mov.w	r1, #2048	; 0x800
@@ -5331,7 +5327,7 @@ void buttonLogic(uint16_t state) {
  8002bf6:	f44f 5180 	mov.w	r1, #4096	; 0x1000
  8002bfa:	486e      	ldr	r0, [pc, #440]	; (8002db4 <buttonLogic+0x200>)
  8002bfc:	f001 fff8 	bl	8004bf0 <HAL_GPIO_WritePin>
-			// ENTER JOG MODE
+
 			if (switchAxis) {
  8002c00:	4b6d      	ldr	r3, [pc, #436]	; (8002db8 <buttonLogic+0x204>)
  8002c02:	781b      	ldrb	r3, [r3, #0]
@@ -5348,8 +5344,7 @@ void buttonLogic(uint16_t state) {
  8002c0e:	f000 f9a1 	bl	8002f54 <jogAxisX>
 			break;
  8002c12:	e017      	b.n	8002c44 <buttonLogic+0x90>
-		case 1:
-			// Right
+		case 1: // Right
 
 			joyLogic = 0;
  8002c14:	4b69      	ldr	r3, [pc, #420]	; (8002dbc <buttonLogic+0x208>)
@@ -5593,8 +5588,6 @@ void buttonLogic(uint16_t state) {
 
 08002de0 <robotArmState>:
 
-
-
 void robotArmState(uint16_t state) {
  8002de0:	b580      	push	{r7, lr}
  8002de2:	b082      	sub	sp, #8
@@ -5648,25 +5641,22 @@ void robotArmState(uint16_t state) {
 		break;
  8002e5e:	e05c      	b.n	8002f1a <robotArmState+0x13a>
 	case 0b0000000000000100: // HOME
-		registerFrame[1].U16 = 0;
+		registerFrame[1].U16 = 0; // RESET : Base System Status
  8002e60:	4b34      	ldr	r3, [pc, #208]	; (8002f34 <robotArmState+0x154>)
  8002e62:	2200      	movs	r2, #0
  8002e64:	805a      	strh	r2, [r3, #2]
-		registerFrame[16].U16 = 0b0000000000000100;
+		registerFrame[16].U16 = 0b0000000000000100; // HOME : y-axis Moving Status
  8002e66:	4b33      	ldr	r3, [pc, #204]	; (8002f34 <robotArmState+0x154>)
  8002e68:	2204      	movs	r2, #4
  8002e6a:	841a      	strh	r2, [r3, #32]
-		startSetHome = 1;
- 8002e6c:	4b32      	ldr	r3, [pc, #200]	; (8002f38 <robotArmState+0x158>)
+		registerFrame[64].U16 = 0b0000000000000001; // HOME : x-axis Moving Status
+ 8002e6c:	4b31      	ldr	r3, [pc, #196]	; (8002f34 <robotArmState+0x154>)
  8002e6e:	2201      	movs	r2, #1
- 8002e70:	701a      	strb	r2, [r3, #0]
-
-		registerFrame[64].U16 = 0b0000000000000001;
- 8002e72:	4b30      	ldr	r3, [pc, #192]	; (8002f34 <robotArmState+0x154>)
- 8002e74:	2201      	movs	r2, #1
- 8002e76:	f8a3 2080 	strh.w	r2, [r3, #128]	; 0x80
-		// registerFrame[16].U16 = 0;
-
+ 8002e70:	f8a3 2080 	strh.w	r2, [r3, #128]	; 0x80
+		startSetHome = 1; // START HOME -> Function
+ 8002e74:	4b30      	ldr	r3, [pc, #192]	; (8002f38 <robotArmState+0x158>)
+ 8002e76:	2201      	movs	r2, #1
+ 8002e78:	701a      	strb	r2, [r3, #0]
 		break;
  8002e7a:	e04e      	b.n	8002f1a <robotArmState+0x13a>
 	case 0b0000000000001000: // RUN TRAY MODE
@@ -5674,36 +5664,36 @@ void robotArmState(uint16_t state) {
 		break;
 	case 0b0000000000010000: // RUN POINT MODE
 		// POSITION
-		registerFrame[1].U16 = 0; // RESET BASE SYSTEM STATUS
+		registerFrame[1].U16 = 0; // RESET: Base System Status
  8002e7c:	4b2d      	ldr	r3, [pc, #180]	; (8002f34 <robotArmState+0x154>)
  8002e7e:	2200      	movs	r2, #0
  8002e80:	805a      	strh	r2, [r3, #2]
 
-		// : X-Point
-		registerFrame[65].U16 = registerFrame[48].U16; //  Read Target Position
+		// X-Point
+		registerFrame[64].U16 = 2; // RUN : x-axis Moving Status
  8002e82:	4b2c      	ldr	r3, [pc, #176]	; (8002f34 <robotArmState+0x154>)
- 8002e84:	f8b3 2060 	ldrh.w	r2, [r3, #96]	; 0x60
- 8002e88:	4b2a      	ldr	r3, [pc, #168]	; (8002f34 <robotArmState+0x154>)
- 8002e8a:	f8a3 2082 	strh.w	r2, [r3, #130]	; 0x82
-		registerFrame[66].U16 = 3000;
- 8002e8e:	4b29      	ldr	r3, [pc, #164]	; (8002f34 <robotArmState+0x154>)
- 8002e90:	f640 32b8 	movw	r2, #3000	; 0xbb8
- 8002e94:	f8a3 2084 	strh.w	r2, [r3, #132]	; 0x84
-		registerFrame[67].U16 = 1;
- 8002e98:	4b26      	ldr	r3, [pc, #152]	; (8002f34 <robotArmState+0x154>)
- 8002e9a:	2201      	movs	r2, #1
- 8002e9c:	f8a3 2086 	strh.w	r2, [r3, #134]	; 0x86
-		registerFrame[64].U16 = 2;
+ 8002e84:	2202      	movs	r2, #2
+ 8002e86:	f8a3 2080 	strh.w	r2, [r3, #128]	; 0x80
+		registerFrame[65].U16 = registerFrame[48].U16; // SET : x-axis Target Position = Read : Goal Point x
+ 8002e8a:	4b2a      	ldr	r3, [pc, #168]	; (8002f34 <robotArmState+0x154>)
+ 8002e8c:	f8b3 2060 	ldrh.w	r2, [r3, #96]	; 0x60
+ 8002e90:	4b28      	ldr	r3, [pc, #160]	; (8002f34 <robotArmState+0x154>)
+ 8002e92:	f8a3 2082 	strh.w	r2, [r3, #130]	; 0x82
+		registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
+ 8002e96:	4b27      	ldr	r3, [pc, #156]	; (8002f34 <robotArmState+0x154>)
+ 8002e98:	f640 32b8 	movw	r2, #3000	; 0xbb8
+ 8002e9c:	f8a3 2084 	strh.w	r2, [r3, #132]	; 0x84
+		registerFrame[67].U16 = 1; // SET : x-axis Target Speed
  8002ea0:	4b24      	ldr	r3, [pc, #144]	; (8002f34 <robotArmState+0x154>)
- 8002ea2:	2202      	movs	r2, #2
- 8002ea4:	f8a3 2080 	strh.w	r2, [r3, #128]	; 0x80
+ 8002ea2:	2201      	movs	r2, #1
+ 8002ea4:	f8a3 2086 	strh.w	r2, [r3, #134]	; 0x86
 
-		// : Y-Point
-		startPointModeY = 1;
+		// Y-Point
+		startPointModeY = 1; // START POINT MODE -> OnlyPositionControl Function
  8002ea8:	4b24      	ldr	r3, [pc, #144]	; (8002f3c <robotArmState+0x15c>)
  8002eaa:	2201      	movs	r2, #1
  8002eac:	701a      	strb	r2, [r3, #0]
-		initPosY = QEIReadModified*(2 * 3.14159 * 11.205 / 8192);
+		initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
  8002eae:	4b24      	ldr	r3, [pc, #144]	; (8002f40 <robotArmState+0x160>)
  8002eb0:	681b      	ldr	r3, [r3, #0]
  8002eb2:	4618      	mov	r0, r3
@@ -5720,11 +5710,11 @@ void robotArmState(uint16_t state) {
  8002ed0:	4a1c      	ldr	r2, [pc, #112]	; (8002f44 <robotArmState+0x164>)
  8002ed2:	6013      	str	r3, [r2, #0]
 
-		registerFrame[16].U16 = 0b0000000000100000; // y-axis Moving Status : Go Point
+		registerFrame[16].U16 = 0b0000000000100000; // Go Point : y-axis Moving Status
  8002ed4:	4b17      	ldr	r3, [pc, #92]	; (8002f34 <robotArmState+0x154>)
  8002ed6:	2220      	movs	r2, #32
  8002ed8:	841a      	strh	r2, [r3, #32]
-		registerFrame[17].U16 = mmActPos; // y-axis Actual Position
+		registerFrame[17].U16 = mmActPos; // WRITE : y-axis Actual Position
  8002eda:	4b1b      	ldr	r3, [pc, #108]	; (8002f48 <robotArmState+0x168>)
  8002edc:	edd3 7a00 	vldr	s15, [r3]
  8002ee0:	eefc 7ae7 	vcvt.u32.f32	s15, s15
@@ -5732,7 +5722,7 @@ void robotArmState(uint16_t state) {
  8002ee8:	b29a      	uxth	r2, r3
  8002eea:	4b12      	ldr	r3, [pc, #72]	; (8002f34 <robotArmState+0x154>)
  8002eec:	845a      	strh	r2, [r3, #34]	; 0x22
-		registerFrame[18].U16 = mmActVel; // y-axis Actual Speed
+		registerFrame[18].U16 = mmActVel; // WRITE : y-axis Actual Speed
  8002eee:	4b17      	ldr	r3, [pc, #92]	; (8002f4c <robotArmState+0x16c>)
  8002ef0:	edd3 7a00 	vldr	s15, [r3]
  8002ef4:	eefc 7ae7 	vcvt.u32.f32	s15, s15
@@ -5740,7 +5730,7 @@ void robotArmState(uint16_t state) {
  8002efc:	b29a      	uxth	r2, r3
  8002efe:	4b0d      	ldr	r3, [pc, #52]	; (8002f34 <robotArmState+0x154>)
  8002f00:	849a      	strh	r2, [r3, #36]	; 0x24
-		registerFrame[19].U16 = mmActAcc; // y-axis Actual Acceleration
+		registerFrame[19].U16 = mmActAcc; // WRITE : y-axis Actual Acceleration
  8002f02:	4b13      	ldr	r3, [pc, #76]	; (8002f50 <robotArmState+0x170>)
  8002f04:	edd3 7a00 	vldr	s15, [r3]
  8002f08:	eefc 7ae7 	vcvt.u32.f32	s15, s15
@@ -5777,53 +5767,53 @@ void robotArmState(uint16_t state) {
 void jogAxisX() {
  8002f54:	b480      	push	{r7}
  8002f56:	af00      	add	r7, sp, #0
-		refXPos = buffer[0].subdata.xAxis;
+	refXPos = buffer[0].subdata.xAxis;
  8002f58:	4b1a      	ldr	r3, [pc, #104]	; (8002fc4 <jogAxisX+0x70>)
  8002f5a:	881b      	ldrh	r3, [r3, #0]
  8002f5c:	ee07 3a90 	vmov	s15, r3
  8002f60:	eef8 7a67 	vcvt.f32.u32	s15, s15
  8002f64:	4b18      	ldr	r3, [pc, #96]	; (8002fc8 <jogAxisX+0x74>)
  8002f66:	edc3 7a00 	vstr	s15, [r3]
-		if (refXPos > 2500) {
+	if (refXPos > 2500) {
  8002f6a:	4b17      	ldr	r3, [pc, #92]	; (8002fc8 <jogAxisX+0x74>)
  8002f6c:	edd3 7a00 	vldr	s15, [r3]
  8002f70:	ed9f 7a16 	vldr	s14, [pc, #88]	; 8002fcc <jogAxisX+0x78>
  8002f74:	eef4 7ac7 	vcmpe.f32	s15, s14
  8002f78:	eef1 fa10 	vmrs	APSR_nzcv, fpscr
  8002f7c:	dd07      	ble.n	8002f8e <jogAxisX+0x3a>
-			dirAxisX = 1;
+		dirAxisX = 1;
  8002f7e:	4b14      	ldr	r3, [pc, #80]	; (8002fd0 <jogAxisX+0x7c>)
  8002f80:	2201      	movs	r2, #1
  8002f82:	701a      	strb	r2, [r3, #0]
-			registerFrame[64].U16 = 0b0000000000000100;
+		registerFrame[64].U16 = 0b0000000000000100; // JOG RIGHT : x-axis Moving Status
  8002f84:	4b13      	ldr	r3, [pc, #76]	; (8002fd4 <jogAxisX+0x80>)
  8002f86:	2204      	movs	r2, #4
  8002f88:	f8a3 2080 	strh.w	r2, [r3, #128]	; 0x80
-		{
-			registerFrame[64].U16 = 0;
+	} else {
+		registerFrame[64].U16 = 0; // RESET : x-axis Moving Status
 
-		}
+	}
 
 }
  8002f8c:	e015      	b.n	8002fba <jogAxisX+0x66>
-		} else if (refXPos < 1500) {
+	} else if (refXPos < 1500) {
  8002f8e:	4b0e      	ldr	r3, [pc, #56]	; (8002fc8 <jogAxisX+0x74>)
  8002f90:	edd3 7a00 	vldr	s15, [r3]
  8002f94:	ed9f 7a10 	vldr	s14, [pc, #64]	; 8002fd8 <jogAxisX+0x84>
  8002f98:	eef4 7ac7 	vcmpe.f32	s15, s14
  8002f9c:	eef1 fa10 	vmrs	APSR_nzcv, fpscr
  8002fa0:	d507      	bpl.n	8002fb2 <jogAxisX+0x5e>
-			dirAxisX = 0;
+		dirAxisX = 0;
  8002fa2:	4b0b      	ldr	r3, [pc, #44]	; (8002fd0 <jogAxisX+0x7c>)
  8002fa4:	2200      	movs	r2, #0
  8002fa6:	701a      	strb	r2, [r3, #0]
-			registerFrame[64].U16 = 0b0000000000001000;
+		registerFrame[64].U16 = 0b0000000000001000; // JOG LEFT : x-axis Moving Status
  8002fa8:	4b0a      	ldr	r3, [pc, #40]	; (8002fd4 <jogAxisX+0x80>)
  8002faa:	2208      	movs	r2, #8
  8002fac:	f8a3 2080 	strh.w	r2, [r3, #128]	; 0x80
 }
  8002fb0:	e003      	b.n	8002fba <jogAxisX+0x66>
-			registerFrame[64].U16 = 0;
+		registerFrame[64].U16 = 0; // RESET : x-axis Moving Status
  8002fb2:	4b08      	ldr	r3, [pc, #32]	; (8002fd4 <jogAxisX+0x80>)
  8002fb4:	2200      	movs	r2, #0
  8002fb6:	f8a3 2080 	strh.w	r2, [r3, #128]	; 0x80

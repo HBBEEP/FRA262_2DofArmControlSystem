@@ -59,7 +59,7 @@ DMA_HandleTypeDef hdma_usart2_tx;
 ModbusHandleTypedef hmodbus;
 u16u8_t registerFrame[70];
 
-// Joy Stick -----------
+// > Joy Stick -------------------------------------------------------------------------------------------------------
 struct PortPin {
 	GPIO_TypeDef *PORT;
 	uint16_t PIN;
@@ -87,22 +87,32 @@ DMA_ADC_BufferType buffer[10];
 
 float refXPos = 2000;
 float refYPos = 2000;
+
 uint8_t countBottomB = 0;
 uint8_t countTopB = 0;
 int8_t countRightB = 0;
 uint8_t countLeftB = 0;
 
 uint8_t switchAxis = 1;
-// MOTOR -------------------
+uint8_t joyLogic = 0;
+// < Joy Stick -------------------------------------------------------------------------------------------------------
+
+
+// > MOTOR -----------------------------------------------------------------------------------------------------------
 float duty = 0;
 uint8_t dirAxisY = 1;
 uint8_t dirAxisX = 1;
-// ENCODER -----------------
+
+// < MOTOR -----------------------------------------------------------------------------------------------------------
+
+// > ENCODER ---------------------------------------------------------------------------------------------------------
 int32_t QEIReadRaw;
 int32_t QEIReadModified;
 int32_t QEIHome;
 
-// PID ---------------------
+// < ENCODER ---------------------------------------------------------------------------------------------------------
+
+// > PID -------------------------------------------------------------------------------------------------------------
 struct pidVariables {
 	float pTerm;
 	float iTerm;
@@ -116,12 +126,22 @@ struct pidVariables velocityPID = { 0, 0, 0, 0 };
 float mmActPos = 0;
 float mmTargetPos = 0;
 float mmError = 0;
-// Calibrate ---------------
-uint8_t startQEI = 0;
-// SENSOR ------------------
-uint8_t photoSig[3];
+float mmActVel = 0;
+float mmActAcc = 0;
+float prePos = 0;
+float preVel = 0;
+float pidVel = 0;
+// < PID -------------------------------------------------------------------------------------------------------------
 
-// TRAJ --------------------
+// > Calibrate -------------------------------------------------------------------------------------------------------
+uint8_t calibrateTrayInput = 0;
+// < Calibrate -------------------------------------------------------------------------------------------------------
+
+// > SENSOR ----------------------------------------------------------------------------------------------------------
+uint8_t photoSig[3];
+// < SENSOR ----------------------------------------------------------------------------------------------------------
+
+// > TRAJECTORY ------------------------------------------------------------------------------------------------------
 
 typedef struct {
 	float x;
@@ -153,62 +173,48 @@ typedef struct {
 	uint8_t reachTraj;
 } calculationTraj;
 
-//float qddm = 2000; // 210*11.205 -> 2117.745
-//float qdm = 2100; // 189*11.205 -> 2353.05
-
-float qddm = 500; // 210*11.205 -> 2117.745
-float qdm = 600; // 189*11.205 -> 2353.05
+float qddm = 500; // 210*11.205 -> 2117.745 float qddm = 2000; // 210*11.205 -> 2117.745
+float qdm = 600; // 189*11.205 -> 2353.05 float qdm = 2100; // 189*11.205 -> 2353.05
 
 float actualTime = 0;
-
-uint16_t subTrajState = 0;
-
-float timeTriSeg1 = 0;
 
 float checkPos = 0;
 float checkVel = 0;
 float checkAcc = 0;
+// < TRAJECTORY ------------------------------------------------------------------------------------------------------
 
-// Kalman Filter ----------
-double K = 0;
-double x = 0;
-double P = 0;
-double P_pre = 0;
-
-double R = 708.5903334;
-double C = 1;
-double Q = 10000;
-
-float kalmanVel = 0;
-float kalmanPos = 0;
-// TEST Variable ----------
-
-float mmActVel = 0;
-float mmActAcc = 0;
-float prePos = 0;
-float preVel = 0;
-float pidVel = 0;
-
-// Home State
+// > HOME STATE ------------------------------------------------------------------------------------------------------
 uint8_t myHomeState = 0;
 uint8_t startSetHome = 1;
+// < HOME STATE ------------------------------------------------------------------------------------------------------
 
-uint8_t joyJog = 1;
-uint8_t joyFine = 1;
 
-uint8_t joyLogic = 0;
-
-// Test Start ------------
+// > TEST START M2 ---------------------------------------------------------------------------------------------------
 uint8_t startTraj = 0; // TRACK 18 path (Only Position)
 uint8_t startKalman = 0; // Lab Kalman
 uint8_t startOnlyPosControl = 0; // Feedback From
 uint8_t startCascadeControl = 0; // Feedback From Sensor
 uint8_t startJoyStick = 0; // Start JoyStick
+// > TEST START M2 ---------------------------------------------------------------------------------------------------
 
-int16_t testVar = 0;
+// > POINT MODE ------------------------------------------------------------------------------------------------------
 uint8_t startPointModeY = 0;
 int32_t initPosY;
-int16_t targetPos = 0;
+// < POINT MODE ------------------------------------------------------------------------------------------------------
+
+
+// Kalman Filter ----------
+//double K = 0;
+//double x = 0;
+//double P = 0;
+//double P_pre = 0;
+//
+//double R = 708.5903334;
+//double C = 1;
+//double Q = 10000;
+//
+//float kalmanVel = 0;
+//float kalmanPos = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -807,13 +813,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			setHome();
 		}
 
-
-		if (startPointModeY)
-		{
-			targetPos = registerFrame[49].U16;
-			onlyPositionControl(initPosY, targetPos/ 10);
+		if (startPointModeY) {
+			int16_t targetPosPointMode = registerFrame[49].U16;
+			onlyPositionControl(initPosY, targetPosPointMode / 10);
 		}
-
 
 	}
 }
@@ -934,7 +937,6 @@ void onlyPositionControl(float initPos, float targetPos) {
 	setMotor();
 }
 
-
 void jogAxisY() {
 	refYPos = buffer[0].subdata.yAxis;
 	if (refYPos > 2500) {
@@ -967,7 +969,7 @@ calculationTraj trapezoidalTraj(float qi, float qf) {
 	float diffPos = abs(qf - qi);
 	int8_t handleMinus = (qf - qi) / diffPos;
 	float timeTrapSeg1 = qdm / qddm;
-	timeTriSeg1 = pow((diffPos / qddm), 0.5);
+	float timeTriSeg1 = pow((diffPos / qddm), 0.5);
 
 	if (timeTriSeg1 < timeTrapSeg1) // triangle shape
 			{
@@ -1066,72 +1068,55 @@ void calibrateTray(trayPos trayX, trayPos trayY, Point *objPos) {
 	float length2 = pow(
 			pow(trayX.pos2 - trayX.pos3, 2) + pow(trayY.pos2 - trayY.pos3, 2),
 			0.5);
-	float k = 50;
-	int caseL[2] = { 1, 0 };
+	uint8_t k = 50;
 	if (length1 > length2) {
 		k = 60;
-		caseL[0] = 0;
-		caseL[1] = 1;
 	}
 
 	float length3 = trayY.pos1 - trayY.pos2;
 	float radians = acos(length3 / k);
 
-	float a[3] = { 10.0f, 30.0f, 50.0f };
-	float b[3] = { 10.0f, 25.0f, 40.0f };
+	float TrayOriginX = trayX.pos2 * 10;
+	float TrayOriginY = trayY.pos2 * 10;
+	int16_t writeDeg = 36000 - (radians * (180 / M_PI) * 100);
+	if (k == 60) {
 
-	for (int i = 0; i < 9; i++) {
-		int index = i % 3;
-		objPos[i].x = trayX.pos1 + a[index] * (caseL[0])
-				+ b[index] * (caseL[1]);
-
-		int row = i / 3;
-		objPos[i].y = trayY.pos1 - b[row] * (caseL[0]) - a[row] * (caseL[1]);
-		objPos[i] = rotatePoint(objPos[i].x, objPos[i].y, trayX.pos1,
-				trayY.pos1, radians);
+		TrayOriginX = trayX.pos3 * 10;
+		TrayOriginY = trayY.pos3 * 10;
+		writeDeg = 27000 - (radians * (180 / M_PI) * 100);
+		radians -= (1.5 * M_PI);
 	}
 
-	int trayInput1 = 1;
-	if (trayInput1) {
-		if (k == 50) {
+	float a[3] = { 10.0f, 30.0f, 50.0f };
+	float b[3] = { 40.0f, 25.0f, 10.0f };
 
-			int16_t writePickTrayOriginX = trayX.pos2 * 10; // registerFrame[32].U16
-			int16_t writePickTrayOriginY = trayY.pos2 * 10; // registerFrame[33].U16
-			registerFrame[32].U16 = writePickTrayOriginX;
-			registerFrame[33].U16 = writePickTrayOriginY;
-			registerFrame[34].U16 = 36000 - (radians * (180 / M_PI) * 100); // int16_t writeDeg
-		} else if (k == 60) {
+	for (int i = 0; i < 9; i++) {
+		uint8_t index = i % 3;
+		objPos[i].x = (TrayOriginX / 10) + a[index];
 
-			int16_t writePickTrayOriginX = trayX.pos3 * 10; // registerFrame[32].U16
-			int16_t writePickTrayOriginY = trayY.pos3 * 10; // registerFrame[33].U16
-			registerFrame[32].U16 = writePickTrayOriginX;
-			registerFrame[33].U16 = writePickTrayOriginY;
-			registerFrame[34].U16 = 27000 - (radians * (180 / M_PI) * 100); // int16_t writeDeg
-		}
-	} else if (trayInput1 == 2) {
-		if (k == 50) {
+		uint8_t row = i / 3;
+		objPos[i].y = (TrayOriginY / 10) + b[row];
+		objPos[i] = rotatePoint(objPos[i].x, objPos[i].y, TrayOriginX / 10,
+				TrayOriginY / 10, radians);
+	}
 
-			int16_t writePickTrayOriginX = trayX.pos2 * 10; // registerFrame[32].U16
-			int16_t writePickTrayOriginY = trayY.pos2 * 10; // registerFrame[33].U16
-			registerFrame[35].U16 = writePickTrayOriginX;
-			registerFrame[36].U16 = writePickTrayOriginY;
-			registerFrame[37].U16 = 36000 - (radians * (180 / M_PI) * 100); // int16_t writeDeg
-
-		} else if (k == 60) {
-
-			int16_t writePickTrayOriginX = trayX.pos3 * 10; // registerFrame[32].U16
-			int16_t writePickTrayOriginY = trayY.pos3 * 10; // registerFrame[33].U16
-			registerFrame[35].U16 = writePickTrayOriginX;
-			registerFrame[36].U16 = writePickTrayOriginY;
-			registerFrame[37].U16 = 27000 - (radians * (180 / M_PI) * 100); // int16_t writeDeg
-		}
+	int16_t writeTrayOriginX = TrayOriginX;
+	int16_t writeTrayOriginY = TrayOriginY;
+	if (calibrateTrayInput == 1) {
+		registerFrame[32].U16  = writeTrayOriginX; // WRTTE : Pick Tray Origin x
+		registerFrame[33].U16 = writeTrayOriginY; // WRTTE : Pick Tray Origin y
+		registerFrame[34].U16 = writeDeg; //WRTTE : Pick Tray Orientation
+	} else if (calibrateTrayInput == 2) {
+		registerFrame[35].U16  = writeTrayOriginX; //  WRTTE : Place Tray Origin x
+		registerFrame[36].U16 = writeTrayOriginY; // WRTTE : Place Tray Origin y
+		registerFrame[37].U16 = writeDeg; // WRTTE : Place Tray Orientation
 	}
 
 }
 
 Point rotatePoint(float p1, float p2, float centerX, float centerY,
 		float radians) {
-
+	// ROTATION MATRIX
 	float cosTheta = cosf(radians);
 	float sinTheta = sinf(radians);
 
@@ -1175,18 +1160,17 @@ void buttonInput() {
 void buttonLogic(uint16_t state) {
 	if (countTopB % 2 == 0) {
 		switch (state) {
-		case 0:
+		case 0: // ENTER JOG MODE
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
 			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_RESET);
-			// ENTER JOG MODE
+
 			if (switchAxis) {
 				jogAxisY();
 			} else {
 				jogAxisX();
 			}
 			break;
-		case 1:
-			// Right
+		case 1: // Right
 
 			joyLogic = 0;
 			break;
@@ -1253,8 +1237,6 @@ void buttonLogic(uint16_t state) {
 
 }
 
-
-
 void robotArmState(uint16_t state) {
 	switch (state) {
 	case 0b0000000000000001: // SET PICK TRAY
@@ -1284,55 +1266,51 @@ void robotArmState(uint16_t state) {
 		registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
 		registerFrame[67].U16 = 1; // SET : x-axis Target Speed
 
-
 		// Y-Point
 		startPointModeY = 1; // START POINT MODE -> OnlyPositionControl Function
-		initPosY = QEIReadModified*(2 * 3.14159 * 11.205 / 8192);
+		initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
 
 		registerFrame[16].U16 = 0b0000000000100000; // Go Point : y-axis Moving Status
-		registerFrame[17].U16 = mmActPos; // y-axis Actual Position
-		registerFrame[18].U16 = mmActVel; // y-axis Actual Speed
-		registerFrame[19].U16 = mmActAcc; // y-axis Actual Acceleration
+		registerFrame[17].U16 = mmActPos; // WRITE : y-axis Actual Position
+		registerFrame[18].U16 = mmActVel; // WRITE : y-axis Actual Speed
+		registerFrame[19].U16 = mmActAcc; // WRITE : y-axis Actual Acceleration
 		break;
 	}
 }
 
 void jogAxisX() {
-		refXPos = buffer[0].subdata.xAxis;
-		if (refXPos > 2500) {
-			dirAxisX = 1;
-			registerFrame[64].U16 = 0b0000000000000100;
-		} else if (refXPos < 1500) {
-			dirAxisX = 0;
-			registerFrame[64].U16 = 0b0000000000001000;
-		}
-		else
-		{
-			registerFrame[64].U16 = 0;
+	refXPos = buffer[0].subdata.xAxis;
+	if (refXPos > 2500) {
+		dirAxisX = 1;
+		registerFrame[64].U16 = 0b0000000000000100; // JOG RIGHT : x-axis Moving Status
+	} else if (refXPos < 1500) {
+		dirAxisX = 0;
+		registerFrame[64].U16 = 0b0000000000001000; // JOG LEFT : x-axis Moving Status
+	} else {
+		registerFrame[64].U16 = 0; // RESET : x-axis Moving Status
 
-		}
+	}
 
 }
-
 
 void HAL_ADC_ConvCallback(ADC_HandleTypeDef *hadc) {
 
 }
 
 // --------------------------------------------------
-float kalmanFilter(float y) {
-	P_pre = P + Q;
-	K = (P_pre * C) / ((C * P_pre * C) + R);
-	x = x + K * (y - C * x);
-	P = (1 - (K * C) * P_pre);
-	return x;
-}
-void kalmanLap() {
-	mmActPos = QEIReadRaw * (2 * 3.14159 * 11.205 / 8192);
-	mmActVel = (mmActPos - prePos) / 0.01;
-	setMotor();
-	prePos = mmActPos;
-}
+//float kalmanFilter(float y) {
+//	P_pre = P + Q;
+//	K = (P_pre * C) / ((C * P_pre * C) + R);
+//	x = x + K * (y - C * x);
+//	P = (1 - (K * C) * P_pre);
+//	return x;
+//}
+//void kalmanLap() {
+//	mmActPos = QEIReadRaw * (2 * 3.14159 * 11.205 / 8192);
+//	mmActVel = (mmActPos - prePos) / 0.01;
+//	setMotor();
+//	prePos = mmActPos;
+//}
 /* USER CODE END 4 */
 
 /**
