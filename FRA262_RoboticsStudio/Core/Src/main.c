@@ -97,7 +97,6 @@ uint8_t switchAxis = 1;
 uint8_t joyLogic = 0;
 // < Joy Stick -------------------------------------------------------------------------------------------------------
 
-
 // > MOTOR -----------------------------------------------------------------------------------------------------------
 float duty = 0;
 uint8_t dirAxisY = 1;
@@ -188,7 +187,6 @@ uint8_t myHomeState = 0;
 uint8_t startSetHome = 1;
 // < HOME STATE ------------------------------------------------------------------------------------------------------
 
-
 // > TEST START M2 ---------------------------------------------------------------------------------------------------
 uint8_t startTraj = 0; // TRACK 18 path (Only Position)
 uint8_t startKalman = 0; // Lab Kalman
@@ -201,7 +199,6 @@ uint8_t startJoyStick = 0; // Start JoyStick
 uint8_t startPointModeY = 0;
 int32_t initPosY;
 // < POINT MODE ------------------------------------------------------------------------------------------------------
-
 
 // Kalman Filter ----------
 //double K = 0;
@@ -242,17 +239,17 @@ calculationTraj trapezoidalTraj(float initPos, float targetPos);
 float kalmanFilter(float y);
 void calibrateTrayTest();
 
-//void setHome(homeState state);
 void setHome();
 void onlyPositionControl(float initPos, float targetPos);
 void robotArmState(uint16_t state);
 
-// ------
 void calibrateTray(trayPos trayX, trayPos trayY, Point *objPos);
 Point rotatePoint(float p1, float p2, float centerX, float centerY, float angle);
 void jogAxisY();
-
 void jogAxisX();
+void joyStatusLED();
+void joyStatusLED2();
+
 
 void kalmanLap();
 
@@ -325,7 +322,7 @@ int main(void) {
 		static uint32_t timestamp = 0;
 		if (HAL_GetTick() >= timestamp) {
 			timestamp = HAL_GetTick() + 100;
-			registerFrame[0].U16 = 22881;
+			registerFrame[0].U16 = 22881; // WRITE : Heartbeat Protocol
 
 		}
 
@@ -800,10 +797,10 @@ static void MX_GPIO_Init(void) {
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim == &htim2) {
 		photoDetect();
-		robotArmState(registerFrame[1].U16);
+		robotArmState(registerFrame[1].U16); // READ : Base System Status
 		readEncoder();
 
-		if (photoSig[0] || photoSig[2]) // Motor Photo Sensor : SOFTWARELIMIT
+		if (photoSig[0] || photoSig[2]) // Motor Photo Sensor : SOFTWARE LIMIT
 				{
 			duty = 0;
 			setMotor();
@@ -814,7 +811,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		}
 
 		if (startPointModeY) {
-			int16_t targetPosPointMode = registerFrame[49].U16;
+			int16_t targetPosPointMode = registerFrame[49].U16; // READ : Goal Point y
 			onlyPositionControl(initPosY, targetPosPointMode / 10);
 		}
 
@@ -867,7 +864,7 @@ void setHome() {
 		QEIHome = QEIReadRaw;
 		startSetHome = 0;
 		myHomeState = 0;
-		registerFrame[16].U16 = 0;
+		registerFrame[16].U16 = 0; // RESET : y-axis Moving Status
 		break;
 
 	}
@@ -958,9 +955,9 @@ void jogAxisY() {
 }
 
 void photoDetect() {
-	photoSig[0] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5);  // Motor Photo Sensor
+	photoSig[0] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5);  // MOTOR Photo Sensor
 	photoSig[1] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_14); // CENTER Photo Sensor
-	photoSig[2] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9);  // Encoder Photo Sensor
+	photoSig[2] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9);  // ENCODER Photo Sensor
 }
 
 calculationTraj trapezoidalTraj(float qi, float qf) {
@@ -1043,9 +1040,9 @@ calculationTraj trapezoidalTraj(float qi, float qf) {
 	int16_t sentPos = mmActPos * 10;
 	int16_t sentVel = mmActVel * 10;
 	int16_t sentAcc = mmActAcc * 10;
-	registerFrame[17].U16 = sentPos;
-	registerFrame[18].U16 = sentVel;
-	registerFrame[19].U16 = sentAcc;
+	registerFrame[17].U16 = sentPos; // WRITE : y-axis Actual Position
+	registerFrame[18].U16 = sentVel; // WRITE : y-axis Actual Speed
+	registerFrame[19].U16 = sentAcc; // WRITE : y-axis Actual Acceleration
 
 	actualTime += 0.001;
 	if (result.posTraj == qf) {
@@ -1053,7 +1050,7 @@ calculationTraj trapezoidalTraj(float qi, float qf) {
 		actualTime = 0;
 		startPointModeY = 0;
 		initPosY = mmActPos;
-		registerFrame[16].U16 = 0;
+		registerFrame[16].U16 = 0; // RESET : y-axis Moving Status
 	} else {
 		result.reachTraj = 0;
 	}
@@ -1076,13 +1073,13 @@ void calibrateTray(trayPos trayX, trayPos trayY, Point *objPos) {
 	float length3 = trayY.pos1 - trayY.pos2;
 	float radians = acos(length3 / k);
 
-	float TrayOriginX = trayX.pos2 * 10;
-	float TrayOriginY = trayY.pos2 * 10;
+	float TrayOriginX = trayX.pos2;
+	float TrayOriginY = trayY.pos2;
 	int16_t writeDeg = 36000 - (radians * (180 / M_PI) * 100);
 	if (k == 60) {
 
-		TrayOriginX = trayX.pos3 * 10;
-		TrayOriginY = trayY.pos3 * 10;
+		TrayOriginX = trayX.pos3;
+		TrayOriginY = trayY.pos3;
 		writeDeg = 27000 - (radians * (180 / M_PI) * 100);
 		radians -= (1.5 * M_PI);
 	}
@@ -1092,22 +1089,22 @@ void calibrateTray(trayPos trayX, trayPos trayY, Point *objPos) {
 
 	for (int i = 0; i < 9; i++) {
 		uint8_t index = i % 3;
-		objPos[i].x = (TrayOriginX / 10) + a[index];
+		objPos[i].x = TrayOriginX + a[index];
 
 		uint8_t row = i / 3;
-		objPos[i].y = (TrayOriginY / 10) + b[row];
-		objPos[i] = rotatePoint(objPos[i].x, objPos[i].y, TrayOriginX / 10,
-				TrayOriginY / 10, radians);
+		objPos[i].y = TrayOriginY + b[row];
+		objPos[i] = rotatePoint(objPos[i].x, objPos[i].y, TrayOriginX,
+				TrayOriginY, radians);
 	}
 
-	int16_t writeTrayOriginX = TrayOriginX;
-	int16_t writeTrayOriginY = TrayOriginY;
+	int16_t writeTrayOriginX = TrayOriginX * 10; // CHANGE DATA TYPE
+	int16_t writeTrayOriginY = TrayOriginY * 10; // CHANGE DATA TYPE
 	if (calibrateTrayInput == 1) {
-		registerFrame[32].U16  = writeTrayOriginX; // WRTTE : Pick Tray Origin x
+		registerFrame[32].U16 = writeTrayOriginX; // WRTTE : Pick Tray Origin x
 		registerFrame[33].U16 = writeTrayOriginY; // WRTTE : Pick Tray Origin y
-		registerFrame[34].U16 = writeDeg; //WRTTE : Pick Tray Orientation
+		registerFrame[34].U16 = writeDeg; // WRTTE : Pick Tray Orientation
 	} else if (calibrateTrayInput == 2) {
-		registerFrame[35].U16  = writeTrayOriginX; //  WRTTE : Place Tray Origin x
+		registerFrame[35].U16 = writeTrayOriginX; //  WRTTE : Place Tray Origin x
 		registerFrame[36].U16 = writeTrayOriginY; // WRTTE : Place Tray Origin y
 		registerFrame[37].U16 = writeDeg; // WRTTE : Place Tray Orientation
 	}
@@ -1161,8 +1158,7 @@ void buttonLogic(uint16_t state) {
 	if (countTopB % 2 == 0) {
 		switch (state) {
 		case 0: // ENTER JOG MODE
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_RESET);
+			joyStatusLED();
 
 			if (switchAxis) {
 				jogAxisY();
@@ -1196,28 +1192,27 @@ void buttonLogic(uint16_t state) {
 		switch (state) {
 		case 0:
 			// ENTER CALIBRATE MODE
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_SET);
+			joyStatusLED2();
 			break;
 		case 1:
 			// Pick
-			if (countRightB == 0) {
-				trayPickX.pos1 = registerFrame[68].U16;
+			if (countRightB == 1) {
+				trayPickX.pos1 = registerFrame[68].U16; // READ : x-axis Actual Position
 				trayPickY.pos1 = mmActPos;
-			} else if (countRightB == 1) {
-				trayPickX.pos2 = registerFrame[68].U16;
-				trayPickY.pos2 = mmActPos;
 			} else if (countRightB == 2) {
-				trayPickX.pos3 = registerFrame[68].U16;
-				trayPickY.pos3 = mmActPos;
+				trayPickX.pos2 = registerFrame[68].U16; // READ : x-axis Actual Position
+				trayPickY.pos2 = mmActPos;
 			} else if (countRightB == 3) {
-				trayPlaceX.pos1 = registerFrame[68].U16;
-				trayPlaceY.pos1 = mmActPos;
+				trayPickX.pos3 = registerFrame[68].U16; // READ : x-axis Actual Position
+				trayPickY.pos3 = mmActPos;
 			} else if (countRightB == 4) {
-				trayPlaceX.pos2 = registerFrame[68].U16;
-				trayPlaceY.pos2 = mmActPos;
+				trayPlaceX.pos1 = registerFrame[68].U16; // READ : x-axis Actual Position
+				trayPlaceY.pos1 = mmActPos;
 			} else if (countRightB == 5) {
-				trayPlaceX.pos3 = registerFrame[68].U16;
+				trayPlaceX.pos2 = registerFrame[68].U16; // READ : x-axis Actual Position
+				trayPlaceY.pos2 = mmActPos;
+			} else if (countRightB == 6) {
+				trayPlaceX.pos3 = registerFrame[68].U16; // READ : x-axis Actual Position
 				trayPlaceY.pos3 = mmActPos;
 			}
 			joyLogic = 0;
@@ -1237,6 +1232,15 @@ void buttonLogic(uint16_t state) {
 
 }
 
+void joyStatusLED() {
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_RESET);
+}
+
+void joyStatusLED2() {
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_SET);
+}
 void robotArmState(uint16_t state) {
 	switch (state) {
 	case 0b0000000000000001: // SET PICK TRAY
