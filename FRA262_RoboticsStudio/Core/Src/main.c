@@ -25,6 +25,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+
+#define endEffector_ADDR 0x15
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,6 +48,8 @@
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
+I2C_HandleTypeDef hi2c2;
+
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
@@ -56,10 +60,10 @@ UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
+// > BASE SYSTEM -------------------------------------------------------------------------------------------------------
 ModbusHandleTypedef hmodbus;
 u16u8_t registerFrame[70];
-
-
+// < BASE SYSTEM -------------------------------------------------------------------------------------------------------
 
 // > Joy Stick -------------------------------------------------------------------------------------------------------
 struct PortPin {
@@ -102,9 +106,7 @@ uint8_t joyLogicLED = 1;
 
 // > PILOT LAMP ------------------------------------------------------------------------------------------------------
 struct PortPin pilotLampPin[3] = { { GPIOA, GPIO_PIN_10 },
-        { GPIOA, GPIO_PIN_11 },
-        { GPIOA, GPIO_PIN_12 },
-        };
+		{ GPIOA, GPIO_PIN_11 }, { GPIOA, GPIO_PIN_12 }, };
 // < PILOT LAMP ------------------------------------------------------------------------------------------------------
 
 // > MOTOR -----------------------------------------------------------------------------------------------------------
@@ -210,6 +212,25 @@ uint8_t startPointModeY = 0;
 int32_t initPosY;
 // < POINT MODE ------------------------------------------------------------------------------------------------------
 
+// > END EFFECTOR ----------------------------------------------------------------------------------------------------
+uint8_t endEffectorWriteFlag = 0;
+uint8_t endEffectorReadFlag = 0;
+uint8_t endEffectorReadBack[1];
+uint8_t selectMode;
+uint8_t selectStatus;
+uint8_t readStatus[1];
+
+struct endE {
+	uint8_t testMode;
+	uint8_t emergencyMode;
+	uint8_t gripperWork;
+	uint8_t gripperPickAndPlace;
+	uint8_t reset;
+	uint8_t status;
+};
+struct endE endEffector = { 0, 1, 2, 3, 4, 5 };
+// < END EFFECTOR ----------------------------------------------------------------------------------------------------
+
 // Kalman Filter ----------
 //double K = 0;
 //double x = 0;
@@ -235,6 +256,7 @@ static void MX_TIM2_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM11_Init(void);
+static void MX_I2C2_Init(void);
 /* USER CODE BEGIN PFP */
 void readEncoder();
 void setMotor();
@@ -262,10 +284,11 @@ void joyDisplayLED();
 
 void kalmanLap();
 
-
 void handleEmergency();
 void pilotLamp(uint8_t id, uint8_t status);
 
+void endEffectorStatusControl(uint16_t status);
+void endEffectorControl(uint8_t mode, uint8_t status);
 
 /* USER CODE END PFP */
 
@@ -310,6 +333,7 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM3_Init();
   MX_TIM11_Init();
+  MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
 	HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_1 | TIM_CHANNEL_2);
 
@@ -340,7 +364,10 @@ int main(void)
 			timestamp = HAL_GetTick() + 100;
 			registerFrame[0].U16 = 22881; // WRITE : Heartbeat Protocol
 			joyDisplayLED();
-
+			if (endEffectorWriteFlag) {
+				endEffectorControl(selectMode, selectStatus);
+				endEffectorWriteFlag = 0;
+			}
 		}
 
 	}
@@ -451,6 +478,40 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief I2C2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C2_Init(void)
+{
+
+  /* USER CODE BEGIN I2C2_Init 0 */
+
+  /* USER CODE END I2C2_Init 0 */
+
+  /* USER CODE BEGIN I2C2_Init 1 */
+
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.ClockSpeed = 100000;
+  hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C2_Init 2 */
+
+  /* USER CODE END I2C2_Init 2 */
 
 }
 
@@ -872,6 +933,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			onlyPositionControl(initPosY, targetPosPointMode / 10);
 		}
 
+//		if (startTrayMode)
+//		{
+//			objPickPos[i].x;
+//			objPickPos[i].y;
+//		}
+
 	}
 }
 
@@ -1117,7 +1184,6 @@ calculationTraj trapezoidalTraj(float qi, float qf) {
 
 	// RUN TRAY MODE
 
-
 	return result;
 }
 
@@ -1250,23 +1316,17 @@ void buttonLogic(uint16_t state) {
 	if (countTopB % 2 == 0) {
 		switch (state) {
 		case 0: // ENTER CALIBRATE MODE
-			if (countRightB == 3)
-			{
+			if (countRightB == 3) {
 				joyLogicLED = 3;
-			}
-			else if (countRightB == 6)
-			{
+			} else if (countRightB == 6) {
 				joyLogicLED = 4;
-			}
-			else
-			{
+			} else {
 				joyLogicLED = 2;
 			}
 
 			break;
 		case 1: // MARK POSITION
 			if (countRightB == 1) {
-				registerFrame[16].U16 = 0b0000000000000001;// Jog Pick : y-axis Moving Status
 				trayPickX.pos1 = registerFrame[68].U16; // READ : x-axis Actual Position
 				trayPickY.pos1 = mmActPos;
 			} else if (countRightB == 2) {
@@ -1279,7 +1339,6 @@ void buttonLogic(uint16_t state) {
 				calibrateTrayInput = 1;
 				calibrateTray(trayPickX, trayPickY, objPickPos);
 			} else if (countRightB == 4) {
-				registerFrame[16].U16 = 0b0000000000000010; // Jog Place : y-axis Moving Status
 				trayPlaceX.pos1 = registerFrame[68].U16; // READ : x-axis Actual Position
 				trayPlaceY.pos1 = mmActPos;
 			} else if (countRightB == 5) {
@@ -1327,55 +1386,79 @@ void robotArmState(uint16_t state) {
 
 	switch (state) {
 	case 0b0000000000000001: // SET PICK TRAY
-		pilotLamp(0, 0);
-		pilotLamp(1, 1);
-		pilotLamp(2, 0);
+		registerFrame[16].U16 = 0b0000000000000001; // Jog Pick : y-axis Moving Status
+
 		buttonInput();
 		buttonLogic(joyLogic);
+
+		pilotLamp(0, 0); // OFF : PILOT LAMP LEFT
+		pilotLamp(1, 1); // ON : PILOT LAMP CENTER
+		pilotLamp(2, 0); // OFF : PILOT LAMP RIGHT
+
 		break;
 	case 0b0000000000000010: // SET PLACE TRAY
-		pilotLamp(0, 0);
-		pilotLamp(1, 1);
-		pilotLamp(2, 0);
+		registerFrame[16].U16 = 0b0000000000000010; // Jog Place : y-axis Moving Status
+
 		buttonInput();
 		buttonLogic(joyLogic);
+
+		pilotLamp(0, 0); // OFF : PILOT LAMP LEFT
+		pilotLamp(1, 1); // ON : PILOT LAMP CENTER
+		pilotLamp(2, 0);  // OFF : PILOT LAMP RIGHT
+
 		break;
 	case 0b0000000000000100: // HOME
-		pilotLamp(0, 1);
-		pilotLamp(1, 0);
-		pilotLamp(2, 0);
-		registerFrame[1].U16 = 0; // RESET : Base System Status
 		registerFrame[16].U16 = 0b0000000000000100; // HOME : y-axis Moving Status
 		registerFrame[64].U16 = 0b0000000000000001; // HOME : x-axis Moving Status
+		registerFrame[1].U16 = 0; // RESET : Base System Status
+
 		startSetHome = 1; // START HOME -> Function
+
+		pilotLamp(0, 1); // ON : PILOT LAMP LEFT
+		pilotLamp(1, 0); // OFF : PILOT LAMP CENTER
+		pilotLamp(2, 0); // OFF : PILOT LAMP RIGHT
+
+
 		break;
 	case 0b0000000000001000: // RUN TRAY MODE
 		// 18 PATH
-		pilotLamp(0, 0);
-		pilotLamp(1, 0);
-		pilotLamp(2, 1);
+//		objPickPos[i].x;
+//		objPickPos[i].y;
+
+		// X-Axis
+		registerFrame[64].U16 = 0b0000000000000010; // RUN : x-axis Moving Status
+
+		// Y-Axis
+
+		pilotLamp(0, 0); // OFF : PILOT LAMP LEFT
+		pilotLamp(1, 0); // OFF : PILOT LAMP CENTER
+		pilotLamp(2, 1); // ON : PILOT LAMP RIGHT
 		break;
 	case 0b0000000000010000: // RUN POINT MODE
-		pilotLamp(0, 0);
-		pilotLamp(1, 0);
-		pilotLamp(2, 1);
-		// POSITION
-		registerFrame[1].U16 = 0; // RESET: Base System Status
 
-		// X-Point
-		registerFrame[64].U16 = 2; // RUN : x-axis Moving Status
+		pilotLamp(0, 0); // OFF : PILOT LAMP LEFT
+		pilotLamp(1, 0); // OFF : PILOT LAMP CENTER
+		pilotLamp(2, 1); // ON : PILOT LAMP RIGHT
+
+
+
+		// X-Axis
+		registerFrame[64].U16 = 0b0000000000000010; // RUN : x-axis Moving Status
 		registerFrame[65].U16 = registerFrame[48].U16; // SET : x-axis Target Position = Read : Goal Point x
 		registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
 		registerFrame[67].U16 = 1; // SET : x-axis Target Speed
 
-		// Y-Point
+		// Y-Axis
 		startPointModeY = 1; // START POINT MODE -> OnlyPositionControl Function
 		initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
 
 		registerFrame[16].U16 = 0b0000000000100000; // Go Point : y-axis Moving Status
-		registerFrame[17].U16 = mmActPos; // WRITE : y-axis Actual Position
-		registerFrame[18].U16 = mmActVel; // WRITE : y-axis Actual Speed
-		registerFrame[19].U16 = mmActAcc; // WRITE : y-axis Actual Acceleration
+//		registerFrame[17].U16 = mmActPos; // WRITE : y-axis Actual Position
+//		registerFrame[18].U16 = mmActVel; // WRITE : y-axis Actual Speed
+//		registerFrame[19].U16 = mmActAcc; // WRITE : y-axis Actual Acceleration
+
+		registerFrame[1].U16 = 0; // RESET: Base System Status
+
 		break;
 	}
 }
@@ -1400,15 +1483,88 @@ void HAL_ADC_ConvCallback(ADC_HandleTypeDef *hadc) {
 }
 
 void handleEmergency() {
-    if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_5) == 0) {
-        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, 1);
-    } else {
-        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, 0);
-    }
+	if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_5) == 0) {
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, 1);
+	} else {
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, 0);
+	}
 }
 void pilotLamp(uint8_t id, uint8_t status) {
-    HAL_GPIO_WritePin(pilotLampPin[id].PORT, pilotLampPin[id].PIN, status);
+	HAL_GPIO_WritePin(pilotLampPin[id].PORT, pilotLampPin[id].PIN, status);
 
+}
+
+
+void endEffectorControl(uint8_t mode, uint8_t status) {
+	switch (mode) {
+	case 0: // LED ON-Off
+		if (hi2c2.State == HAL_I2C_STATE_READY) {
+			static uint8_t data[2][1] = { { 0x00 }, { 0x01 } };
+			HAL_I2C_Mem_Write(&hi2c2, endEffector_ADDR << 1, 0x01,
+			I2C_MEMADD_SIZE_8BIT, data[status], 1, 100);
+		}
+		break;
+
+	case 1: //  Emergency Mode
+		if (hi2c2.State == HAL_I2C_STATE_READY) {
+			if (status == 1) {
+				static uint8_t data[3] = { 0x7A, 0xFF, 0x81 };
+				HAL_I2C_Mem_Write(&hi2c2, endEffector_ADDR << 1, 0xE5,
+				I2C_MEMADD_SIZE_8BIT, data, 3, 100);
+			} else {
+				static uint8_t data[1] = { 0xF0 };
+				HAL_I2C_Mem_Write(&hi2c2, endEffector_ADDR << 1, 0xF0,
+				I2C_MEMADD_SIZE_8BIT, data, 0, 100);
+			}
+		}
+		break;
+
+	case 2: // Gripper Working and Gripper Stops Working
+		if (hi2c2.State == HAL_I2C_STATE_READY) {
+			static uint8_t data[2][1] = { { 0x8C }, { 0x13 } };
+			HAL_I2C_Mem_Write(&hi2c2, endEffector_ADDR << 1, 0x10,
+			I2C_MEMADD_SIZE_8BIT, data[status], 1, 100);
+		}
+		break;
+
+	case 3: // Gripper Pick Up and Gripper Place down
+		if (hi2c2.State == HAL_I2C_STATE_READY) {
+			static uint8_t data[2][1] = { { 0x69 }, { 0x5A } };
+			HAL_I2C_Mem_Write(&hi2c2, endEffector_ADDR << 1, 0x10,
+			I2C_MEMADD_SIZE_8BIT, data[status], 1, 100);
+		}
+		break;
+
+	case 4: // Soft reset
+		if (hi2c2.State == HAL_I2C_STATE_READY) {
+			static uint8_t data[3] = { 0xFF, 0x55, 0xAA };
+			HAL_I2C_Mem_Write(&hi2c2, endEffector_ADDR << 1, 0x00,
+			I2C_MEMADD_SIZE_8BIT, data, 3, 100);
+		}
+		break;
+
+	case 5: // Current status
+		if (hi2c2.State == HAL_I2C_STATE_READY) {
+			HAL_I2C_Master_Receive(&hi2c2, endEffector_ADDR << 1, readStatus, 1, 100);
+		}
+		break;
+	}
+}
+
+void endEffectorStatusControl(uint16_t status) {
+	if ((status & 0b00000001) == 1 || (status & 0b00000001) == 0) { // bit0 Laser On/Off
+		endEffectorControl(endEffector.testMode, status & 0b00000001);
+	}
+	if ((status & 0b00000010) == 1 || (status & 0b00000010) == 0) { // bit1 Gripper Power
+		endEffectorControl(endEffector.gripperWork, status & 0b00000001);
+
+	}
+	if ((status & 0b00000100) == 1 || (status & 0b00000100) == 0) { // bit1 Gripper Picking
+		endEffectorControl(endEffector.gripperPickAndPlace, 1);
+	}
+	if ((status & 0b00001000) == 1 || (status & 0b00001000) == 0) { // bit1 Gripper Placing
+		endEffectorControl(endEffector.gripperPickAndPlace, 0);
+	}
 }
 // --------------------------------------------------
 //float kalmanFilter(float y) {
