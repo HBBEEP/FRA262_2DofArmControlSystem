@@ -131,7 +131,7 @@ struct pidVariables {
 	float eIntegral;
 };
 
-struct pidVariables positionPID = { 50, 25, 0, 0 };
+struct pidVariables positionPID = { 10, 5, 0, 0 };
 struct pidVariables velocityPID = { 0, 0, 0, 0 };
 
 float mmActPos = 0;
@@ -189,7 +189,7 @@ typedef struct {
 float qddm = 500; // 210*11.205 -> 2117.745 float qddm = 2000; // 210*11.205 -> 2117.745
 float qdm = 600; // 189*11.205 -> 2353.05 float qdm = 2100; // 189*11.205 -> 2353.05
 
-float actualTime = 0;
+float actualTime = 0.001;
 
 float checkPos = 0;
 float checkVel = 0;
@@ -258,8 +258,10 @@ uint8_t passInit = 0;
 uint8_t checkGoPick = 0;
 uint8_t PIDCase = 0;
 
-uint8_t x = 0;
+uint8_t x[3] = { 0, 0, 0 };
 uint8_t x2 = 0;
+
+float finalPIDChecky = 0;
 // Kalman Filter ----------
 //double K = 0;
 //double x = 0;
@@ -404,12 +406,20 @@ int main(void) {
 			registerFrame[18].U16 = sentVel; // WRITE : y-axis Actual Speed
 			registerFrame[19].U16 = sentAcc; // WRITE : y-axis Actual Acceleration
 
-//			if (x) {
-//				endEffectorControl(endEffector.status, 0);
-//				//endEffectorPick();
-//				endEffectorPlace();
-//			}
-
+			if (x[0] && x2) {
+				//x[2] = 1;
+				endEffectorControl(endEffector.status, 0);
+				//HAL_Delay(10);
+				endEffectorPick();
+				//HAL_Delay(3000);
+				//endEffectorPlace();
+			} else if (x[1] && x2) {
+				endEffectorControl(endEffector.status, 0);
+				//HAL_Delay(10);
+				//endEffectorPick();
+				endEffectorPlace();
+				//HAL_Delay(3000);
+			}
 
 			endEffectorDataScan[1] = registerFrame[2].U16;
 			if (endEffectorDataScan[1] != endEffectorDataScan[0]) {
@@ -945,7 +955,8 @@ static void MX_GPIO_Init(void) {
 
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-	if (htim == &htim2) {
+	if (htim == &htim2 && x2 == 0) //
+			{
 		photoDetect();
 		robotArmStateDataScan[1] = registerFrame[1].U16;
 		if (robotArmStateDataScan[1] != robotArmStateDataScan[0]) {
@@ -990,7 +1001,6 @@ void runTrayMode() {
 		break;
 	case 1: // GO PICK
 		// X-Axis
-
 		PIDCase = 0;
 		registerFrame[64].U16 = 0b0000000000000010; // RUN : x-axis Moving Status
 		registerFrame[65].U16 = objPickPos[pathComplete].x; // SET : x-axis Target Position
@@ -1003,21 +1013,23 @@ void runTrayMode() {
 		registerFrame[16].U16 = 0b0000000000001000; // GO PICK : y-axis Moving Status
 		initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
 
-		onlyPositionControl(initPosY, objPickPos[pathComplete].y);
-
-		// if finished -> runTrayModeCase = 2;
-
+		runTrayModeCase = 2;
 		break;
 	case 2:
+		onlyPositionControl(initPosY, objPickPos[pathComplete].y);
+		break;
+	case 3:
 		// END EFFECTOR CONTROL
-		checkGoPick = 0;
-		endEffectorControl(endEffector.status, 1);
+		checkGoPick = 5;
+		//endEffectorControl(endEffector.status, 0);
 		//HAL_Delay(10);
-		endEffectorPick();
+		//endEffectorPick();
 		// endEffectorPicking = 1;
+		x2 = 1;
+		x[0] = 1;
 
 		break;
-	case 3:  // GO PLACE
+	case 4:  // GO PLACE
 		PIDCase = 0;
 		//checkGoPick = 1;
 		// X-Axis
@@ -1028,23 +1040,26 @@ void runTrayMode() {
 
 		// Y-Axis
 		passInit = 0;
+		PIDCase = 0;
 
 		registerFrame[16].U16 = 0b0000000000010000; // GO PLACE : y-axis Moving Status
 
 		initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
-
-		onlyPositionControl(initPosY, objPlacePos[pathComplete].y);
-
-		// if finished -> runTrayModeCase = 4;
+		runTrayModeCase = 5;
 
 		break;
-	case 4:
-		checkGoPick = 0;
+	case 5:
+		onlyPositionControl(initPosY, objPlacePos[pathComplete].y);
+		break;
+	case 6:
+		//	checkGoPick = 0;
 		// END EFFECTOR CONTROL
-		endEffectorControl(endEffector.status, 1);
+		//endEffectorControl(endEffector.status, 0);
 		//HAL_Delay(10);
-		endEffectorPlace();
+		//endEffectorPlace();
 		// endEffectorPlacing = 1;
+		x2 = 1;
+		x[1] = 1;
 
 		break;
 	}
@@ -1073,10 +1088,11 @@ void endEffectorPick() {
 		}
 		break;
 	case 3:
-		runTrayModeCase = 3;
+		runTrayModeCase = 4;
 		endEffectorState = 0;
 		endEffectorPicking = 0;
-		x = 0;
+		x[0] = 0;
+		x2 = 0;
 		break;
 	}
 //	endEffectorControl(endEffector.gripperWork, 1); // GRIPPER ON
@@ -1117,10 +1133,12 @@ void endEffectorPlace() {
 		}
 		break;
 	case 3:
-		runTrayModeCase = 3;
+		runTrayModeCase = 1;
 		endEffectorState = 0;
 		endEffectorPicking = 0;
-		x = 0;
+		pathComplete += 1;
+		x[1] = 0;
+		x2 = 0;
 		break;
 	}
 
@@ -1239,6 +1257,7 @@ void onlyPositionControl(float initPos, float targetPos) {
 
 	switch (PIDCase) {
 	case 0:
+
 		mmActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
 		mmActVel = (mmActPos - prePos) / 0.001;
 		mmActAcc = (mmActVel - preVel) / 0.001;
@@ -1255,26 +1274,37 @@ void onlyPositionControl(float initPos, float targetPos) {
 		}
 		if (duty > 1000) {
 			duty = 1000;
-		} else if (duty <= 120) {
+		} else if (duty <= 80) {
 			duty = 0;
 		}
 
-		if (mmError <= 0.5 && mmError >= -0.5 && passInit) {
+		setMotor();
 
-			passInit = 0;
-			PIDCase = 1;
-		}
-		passInit = 1;
 		prePos = mmActPos;
 		preVel = mmActVel;
+		finalPIDChecky = result.posTraj;
+		if (targetPos != 0 && result.posTraj != 0.0 && passInit) {
+			if (fabs(mmError) <= 0.6) //&& passInit
+					{
+				PIDCase = 1;
+			}
 
-		setMotor();
+		}
+
+		passInit = 1;
 		break;
 	case 1:
-		if (runTrayModeCase == 1) {
-			runTrayModeCase = 2;
-		} else if (runTrayModeCase == 3) {
-			runTrayModeCase = 4;
+		if (runTrayModeCase == 2) {
+			runTrayModeCase = 3;
+			passInit = 0;
+			PIDCase = 0;
+
+		} else if (runTrayModeCase == 5) {
+			runTrayModeCase = 6;
+			passInit = 0;
+			PIDCase = 0;
+
+
 		}
 		break;
 	}
@@ -1395,7 +1425,7 @@ calculationTraj trapezoidalTraj(float qi, float qf) {
 
 		if (result.posTraj == qf) {
 			result.reachTraj = 1;
-			actualTime = 0;
+			actualTime = 0.001;
 			startPointModeY = 0;
 			initPosY = mmActPos;
 			registerFrame[16].U16 = 0; // RESET : y-axis Moving Status
@@ -1409,8 +1439,7 @@ calculationTraj trapezoidalTraj(float qi, float qf) {
 
 		if (result.posTraj == qf) {
 			result.reachTraj = 1;
-			actualTime = 0;
-
+			actualTime = 0.001;
 			initPosY = mmActPos;
 
 		}
