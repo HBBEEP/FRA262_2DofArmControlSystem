@@ -131,7 +131,7 @@ struct pidVariables {
 	float eIntegral;
 };
 
-struct pidVariables positionPID = { 135, 75, 0, 0 };
+struct pidVariables positionPID = { 10, 25, 0, 0 }; // 60 / 80  ::: 220 / 122
 struct pidVariables velocityPID = { 0, 0, 0, 0 };
 
 float mmActPos = 0;
@@ -258,10 +258,12 @@ uint8_t passInit = 0;
 uint8_t checkGoPick = 0;
 uint8_t PIDCase = 0;
 
-uint8_t x[3] = { 0, 0, 0 };
+uint8_t x[4] = { 0, 0, 0, 0 };
 uint8_t x2 = 0;
 
 float finalPIDChecky = 0;
+uint8_t myJoyState = 30;
+
 // Kalman Filter ----------
 //double K = 0;
 //double x = 0;
@@ -325,6 +327,10 @@ void runTrayMode();
 
 void endEffectorPick();
 void endEffectorPlace();
+
+void handleJogAxisY(uint8_t jogStateY);
+
+void onlyPositionControlPointMode(float initPos, float targetPos);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -431,6 +437,7 @@ int main(void) {
 			joyDisplayLED();
 
 			if (joyStart) {
+
 				buttonInput(); // DETECT : Button Input
 				buttonLogic(joyLogic);
 			}
@@ -978,7 +985,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
 		if (startPointModeY) {
 			int16_t targetPosPointMode = registerFrame[49].U16; // READ : Goal Point y
-			onlyPositionControl(initPosY, targetPosPointMode / 10);
+			onlyPositionControlPointMode(initPosY, targetPosPointMode / 10);
 		}
 
 		if (startRunTray) {
@@ -989,7 +996,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 }
 
 void runTrayMode() {
-
 
 	switch (runTrayModeCase) {
 	// BEFORE START SET HOME FIRST
@@ -1153,7 +1159,7 @@ void setHome() {
 		} else // ANY Position
 		{
 			dirAxisY = 0;
-			duty = 220;
+			duty = 350;
 			setMotor();
 			myHomeState = 1;
 		}
@@ -1162,7 +1168,7 @@ void setHome() {
 		if (photoSig[0]) // Motor Photo Sensor
 		{
 			dirAxisY = 1;
-			duty = 220;
+			duty = 350;
 			setMotor();
 		} else if (photoSig[1]) // Center Photo Sensor
 		{
@@ -1245,7 +1251,7 @@ void onlyPositionControl(float initPos, float targetPos) {
 		}
 		if (duty > 1000) {
 			duty = 1000;
-		} else if (duty <= 100) {
+		} else if (duty <= 300) {
 			duty = 0;
 		}
 
@@ -1254,14 +1260,17 @@ void onlyPositionControl(float initPos, float targetPos) {
 		prePos = mmActPos;
 		preVel = mmActVel;
 		finalPIDChecky = result.posTraj;
-		if (targetPos != 0 && result.posTraj != 0.0 && passInit && result.velTraj == 0.0) {
-			if (fabs(mmError) <= 0.6 && duty == 0) //&& passInit
-					{
-				PIDCase = 1;
-			}
-
+//		if (targetPos != 0 && result.posTraj != 0.0 && passInit
+//				&& result.velTraj == 0.0) {
+//			if (fabs(mmError) <= 1.2 && duty == 0) //&& passInit
+//					{
+//				PIDCase = 1;
+//			}
+//
+//		}
+		if (fabs(mmError) <= 1.2 && passInit && result.velTraj == 0.0) {
+			PIDCase = 1;
 		}
-
 		passInit = 1;
 		break;
 	case 1:
@@ -1275,13 +1284,42 @@ void onlyPositionControl(float initPos, float targetPos) {
 			passInit = 0;
 			PIDCase = 0;
 
-
 		}
 		break;
 	}
 
 }
 
+void onlyPositionControlPointMode(float initPos, float targetPos) {
+	calculationTraj result = trapezoidalTraj(initPos, targetPos);
+
+	mmActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
+	mmActVel = (mmActPos - prePos) / 0.001;
+	mmActAcc = (mmActVel - preVel) / 0.001;
+
+	mmError = result.posTraj - mmActPos;
+	positionPID.eIntegral = positionPID.eIntegral + (mmError * 0.001);
+	duty = (positionPID.pTerm * mmError)
+			+ (positionPID.iTerm * positionPID.eIntegral);
+	if (duty < 0) {
+		dirAxisY = 0;
+		duty = (-1) * duty;
+	} else {
+		dirAxisY = 1;
+	}
+	if (duty > 1000) {
+		duty = 1000;
+	} else if (duty <= 80) {
+		duty = 0;
+	}
+
+	setMotor();
+
+	prePos = mmActPos;
+	preVel = mmActVel;
+	finalPIDChecky = result.posTraj;
+
+}
 void jogAxisY() {
 	refYPos = buffer[0].subdata.yAxis;
 	if (refYPos > 2500) {
@@ -1290,9 +1328,9 @@ void jogAxisY() {
 		dirAxisY = 0;
 	}
 	if (refYPos > 3600 || refYPos < 100) {
-		duty = 250;
+		duty = 350;
 	} else if (refYPos > 2500 && refYPos <= 3600) {
-		duty = 200;
+		duty = 300;
 	}
 
 	else if (refYPos > 100 && refYPos <= 1500) {
@@ -1303,6 +1341,87 @@ void jogAxisY() {
 	setMotor();
 
 }
+//
+//void handleJogAxisY(uint8_t jogStateY)
+//{
+//	switch (jogStateY % 3)
+//	{
+//	case 0:
+//		jogAxisY1();
+//		break;
+//	case 1:
+//		jogAxisY2();
+//		break;
+//	case 2:
+//		jogAxisY3();
+//		break;
+//	}
+//}
+//
+
+//void jogAxisY1() {
+//	refYPos = buffer[0].subdata.yAxis;
+//	if (refYPos > 2500) {
+//		dirAxisY = 1;
+//	} else if (refYPos < 1500) {
+//		dirAxisY = 0;
+//	}
+//	if (refYPos > 3600 || refYPos < 100) {
+//		duty = 250;
+//	} else if (refYPos > 2500 && refYPos <= 3600) {
+//		duty = 200;
+//	}
+//
+//	else if (refYPos > 100 && refYPos <= 1500) {
+//		duty = 200;
+//	} else {
+//		duty = 0;
+//	}
+//	setMotor();
+//
+//}
+//void jogAxisY2() {
+//	refYPos = buffer[0].subdata.yAxis;
+//	if (refYPos > 2500) {
+//		dirAxisY = 1;
+//	} else if (refYPos < 1500) {
+//		dirAxisY = 0;
+//	}
+//	if (refYPos > 3600 || refYPos < 100) {
+//		duty = 900;
+//	} else if (refYPos > 2500 && refYPos <= 3600) {
+//		duty = 500;
+//	}
+//
+//	else if (refYPos > 100 && refYPos <= 1500) {
+//		duty = 500;
+//	} else {
+//		duty = 0;
+//	}
+//	setMotor();
+//
+//}
+//void jogAxisY3() {
+//	refYPos = buffer[0].subdata.yAxis;
+//	if (refYPos > 2500) {
+//		dirAxisY = 1;
+//	} else if (refYPos < 1500) {
+//		dirAxisY = 0;
+//	}
+//	if (refYPos > 3600 || refYPos < 100) {
+//		duty = 180;
+//	} else if (refYPos > 2500 && refYPos <= 3600) {
+//		duty = 140;
+//	}
+//
+//	else if (refYPos > 100 && refYPos <= 1500) {
+//		duty = 200;
+//	} else {
+//		duty = 0;
+//	}
+//	setMotor();
+//
+//}
 
 void photoDetect() {
 	photoSig[0] = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5);  // MOTOR Photo Sensor
@@ -1391,8 +1510,9 @@ calculationTraj trapezoidalTraj(float qi, float qf) {
 
 	// CHECK STATUS
 
-	if (startPointModeY) {
-		// POINT MODE
+	if (startPointModeY) 		// POINT MODE
+
+	{
 
 		if (result.posTraj == qf) {
 			result.reachTraj = 1;
@@ -1412,7 +1532,7 @@ calculationTraj trapezoidalTraj(float qi, float qf) {
 			result.reachTraj = 1;
 			actualTime = 0.001;
 			initPosY = mmActPos;
-
+			registerFrame[16].U16 = 0; // RESET : y-axis Moving Status // ---------
 		}
 
 		else {
@@ -1529,8 +1649,11 @@ void buttonLogic(uint16_t state) {
 			} else {
 				jogAxisX();
 			}
+
+			// handleJogAxisY(myJoyState);
 			break;
 		case 1: // RIGHT
+			myJoyState += 1;
 
 			joyLogic = 0;
 			break;
@@ -1544,16 +1667,16 @@ void buttonLogic(uint16_t state) {
 			break;
 		case 3: // LEFT
 			joyLogic = 0;
-
+			myJoyState -= 1;
 			break;
 		}
 	}
 	if (countTopB % 2 == 0) {
 		switch (state) {
 		case 0: // ENTER CALIBRATE MODE
-			if (countRightB == 3) {
+			if (countRightB == 4) {
 				joyLogicLED = 3;
-			} else if (countRightB == 6) {
+			} else if (countRightB == 7) {
 				joyLogicLED = 4;
 			} else {
 				joyLogicLED = 2;
@@ -1624,7 +1747,8 @@ void robotArmState(uint16_t state) {
 		registerFrame[16].U16 = 0b0000000000000001; // Jog Pick : y-axis Moving Status
 
 		joyStart = 1;
-
+		registerFrame[66].U16 = 300; // SET : x-axis Target Speed
+		registerFrame[67].U16 = 3; // SET : x-axis Target Speed
 		pilotLamp(0, 0); // OFF : PILOT LAMP LEFT
 		pilotLamp(1, 1); // ON : PILOT LAMP CENTER
 		pilotLamp(2, 0); // OFF : PILOT LAMP RIGHT
@@ -1634,7 +1758,8 @@ void robotArmState(uint16_t state) {
 		registerFrame[16].U16 = 0b0000000000000010; // Jog Place : y-axis Moving Status
 
 		joyStart = 1;
-
+		registerFrame[66].U16 = 300; // SET : x-axis Target Speed
+		registerFrame[67].U16 = 3; // SET : x-axis Target Speed
 		pilotLamp(0, 0); // OFF : PILOT LAMP LEFT
 		pilotLamp(1, 1); // ON : PILOT LAMP CENTER
 		pilotLamp(2, 0);  // OFF : PILOT LAMP RIGHT
@@ -1722,9 +1847,12 @@ void endEffectorControl(uint8_t mode, uint8_t status) {
 	switch (mode) {
 	case 0: // LED ON-Off
 		if (hi2c2.State == HAL_I2C_STATE_READY) {
-			static uint8_t data[2][1] = { { 0x00 }, { 0x01 } };
+			x[2] += 1;
+			static uint8_t data[2][2] = { { 0x00 }, { 0x01 } };
 			HAL_I2C_Mem_Write(&hi2c2, endEffector_ADDR << 1, 0x01,
 			I2C_MEMADD_SIZE_8BIT, data[status], 1, 100);
+//			HAL_I2C_Master_Transmit(&hi2c2, endEffector_ADDR << 1, data[status],
+//					2, 100);
 		}
 		break;
 
@@ -1760,6 +1888,7 @@ void endEffectorControl(uint8_t mode, uint8_t status) {
 
 	case 4: // Soft reset
 		if (hi2c2.State == HAL_I2C_STATE_READY) {
+			x[2] += 1;
 			static uint8_t data[3] = { 0xFF, 0x55, 0xAA };
 			HAL_I2C_Mem_Write(&hi2c2, endEffector_ADDR << 1, 0x00,
 			I2C_MEMADD_SIZE_8BIT, data, 3, 100);
@@ -1780,20 +1909,21 @@ void endEffectorStatusControl(uint16_t regisFrame) // PUT REGISTOR
 
 	switch (regisFrame) {
 	case 0b0000000000000000: // LASER OFF
-		endEffectorControl(endEffector.gripperWork, 0);
-		HAL_Delay(10);
+		//x[2]=0;
+		//endEffectorControl(endEffector.gripperWork, 0);
+		//HAL_Delay(10);
 		endEffectorControl(endEffector.testMode, 0);
 		break;
 	case 0b0000000000000001: // LASER ON
-
-		endEffectorControl(endEffector.gripperWork, 0);
-		HAL_Delay(10);
+		//x[2]+=1;
+		//endEffectorControl(endEffector.gripperWork, 0);
+		//HAL_Delay(10);
 		endEffectorControl(endEffector.testMode, 1);
 		break;
 	case 0b0000000000000010: // GRIPPER POWER
 
 		endEffectorControl(endEffector.testMode, 0);
-		HAL_Delay(10);
+		//HAL_Delay(10);
 		endEffectorControl(endEffector.gripperWork, 1);
 		break;
 	case 0b0000000000000110: // GRIPPER PICK
