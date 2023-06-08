@@ -131,7 +131,7 @@ struct pidVariables {
 	float eIntegral;
 };
 
-struct pidVariables positionPID = { 10, 5, 0, 0 };
+struct pidVariables positionPID = { 135, 75, 0, 0 };
 struct pidVariables velocityPID = { 0, 0, 0, 0 };
 
 float mmActPos = 0;
@@ -990,10 +990,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
 void runTrayMode() {
 
-	if (pathComplete == 18) {
-		setHome();
-		pathComplete = 0;
-	}
+
 	switch (runTrayModeCase) {
 	// BEFORE START SET HOME FIRST
 	case 0:
@@ -1040,7 +1037,6 @@ void runTrayMode() {
 
 		// Y-Axis
 		passInit = 0;
-		PIDCase = 0;
 
 		registerFrame[16].U16 = 0b0000000000010000; // GO PLACE : y-axis Moving Status
 
@@ -1095,21 +1091,6 @@ void endEffectorPick() {
 		x2 = 0;
 		break;
 	}
-//	endEffectorControl(endEffector.gripperWork, 1); // GRIPPER ON
-//	HAL_Delay(10);
-//	endEffectorControl(endEffector.gripperPickAndPlace, 1); // PICK UP
-//	HAL_Delay(2100);
-//	endEffectorControl(endEffector.gripperWork, 0); // GRIPPER OFF
-//
-//	// CHECK END EFFECTOR STATUS
-//
-//	endEffectorControl(5, 0);  // CURRENT STATUS
-//
-//	if (readStatus[0] == 0b111) {
-//		runTrayModeCase = 3;
-//		endEffectorPicking = 0;
-//
-//	}
 }
 
 void endEffectorPlace() {
@@ -1139,24 +1120,14 @@ void endEffectorPlace() {
 		pathComplete += 1;
 		x[1] = 0;
 		x2 = 0;
+		if (pathComplete == 9) { // PUT IN SWITCH CASE
+			setHome();
+			pathComplete = 0;
+			runTrayModeCase = 0;
+		}
 		break;
 	}
 
-//	endEffectorControl(endEffector.gripperWork, 1); // GRIPPER ON
-//	HAL_Delay(10);
-//	endEffectorControl(endEffector.gripperPickAndPlace, 0); // PLACE DOWN
-//	HAL_Delay(2100);
-//	endEffectorControl(endEffector.gripperWork, 0); // GRIPPER OFF
-//
-//	// CHECK END EFFECTOR STATUS
-//	HAL_Delay(10);
-//	endEffectorControl(endEffector.status, 0);  // CURRENT STATUS
-//	if (readStatus[0] == 0b000) {
-//		pathComplete += 1;
-//		runTrayModeCase = 1;
-//		endEffectorPlacing = 0;
-//
-//	}
 }
 void setMotor() {
 	if (dirAxisY) {
@@ -1274,7 +1245,7 @@ void onlyPositionControl(float initPos, float targetPos) {
 		}
 		if (duty > 1000) {
 			duty = 1000;
-		} else if (duty <= 80) {
+		} else if (duty <= 100) {
 			duty = 0;
 		}
 
@@ -1283,8 +1254,8 @@ void onlyPositionControl(float initPos, float targetPos) {
 		prePos = mmActPos;
 		preVel = mmActVel;
 		finalPIDChecky = result.posTraj;
-		if (targetPos != 0 && result.posTraj != 0.0 && passInit) {
-			if (fabs(mmError) <= 0.6) //&& passInit
+		if (targetPos != 0 && result.posTraj != 0.0 && passInit && result.velTraj == 0.0) {
+			if (fabs(mmError) <= 0.6 && duty == 0) //&& passInit
 					{
 				PIDCase = 1;
 			}
@@ -1550,7 +1521,6 @@ void buttonInput() {
 
 void buttonLogic(uint16_t state) {
 	if (countTopB % 2 == 1) {
-		countRightB = 0;
 		switch (state) {
 		case 0: // ENTER JOG MODE
 			joyLogicLED = 1;
@@ -1591,25 +1561,25 @@ void buttonLogic(uint16_t state) {
 
 			break;
 		case 1: // MARK POSITION
-			if (countRightB == 1) {
+			if (countRightB == 2) {
 				trayPickX.pos1 = registerFrame[68].U16; // READ : x-axis Actual Position
 				trayPickY.pos1 = mmActPos;
-			} else if (countRightB == 2) {
+			} else if (countRightB == 3) {
 				trayPickX.pos2 = registerFrame[68].U16; // READ : x-axis Actual Position
 				trayPickY.pos2 = mmActPos;
-			} else if (countRightB == 3) {
+			} else if (countRightB == 4) {
 				registerFrame[16].U16 = 0;
 				trayPickX.pos3 = registerFrame[68].U16; // READ : x-axis Actual Position
 				trayPickY.pos3 = mmActPos;
 				calibrateTrayInput = 1;
 				calibrateTray(trayPickX, trayPickY, objPickPos);
-			} else if (countRightB == 4) {
+			} else if (countRightB == 5) {
 				trayPlaceX.pos1 = registerFrame[68].U16; // READ : x-axis Actual Position
 				trayPlaceY.pos1 = mmActPos;
-			} else if (countRightB == 5) {
+			} else if (countRightB == 6) {
 				trayPlaceX.pos2 = registerFrame[68].U16; // READ : x-axis Actual Position
 				trayPlaceY.pos2 = mmActPos;
-			} else if (countRightB == 6) {
+			} else if (countRightB == 7) {
 				registerFrame[16].U16 = 0;
 				trayPlaceX.pos3 = registerFrame[68].U16; // READ : x-axis Actual Position
 				trayPlaceY.pos3 = mmActPos;
