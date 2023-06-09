@@ -267,6 +267,7 @@ uint8_t myJoyState = 30;
 uint8_t goPick = 1;
 uint8_t goPlace = 1;
 
+uint8_t endEffectorStatusStep = 0;
 // Kalman Filter ----------
 //double K = 0;
 //double x = 0;
@@ -407,8 +408,7 @@ int main(void) {
 
 		handleEmergency();
 		if (HAL_GetTick() >= timestamp) {
-			timestamp = HAL_GetTick() + 100;
-
+			timestamp = HAL_GetTick() + 200;
 
 			int16_t sentPos = mmActPos * 10;
 			int16_t sentVel = mmActVel * 10;
@@ -418,23 +418,104 @@ int main(void) {
 			registerFrame[18].U16 = sentVel; // WRITE : y-axis Actual Speed
 			registerFrame[19].U16 = sentAcc; // WRITE : y-axis Actual Acceleration
 
-			mmActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
+			mmActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192); // NO THIS FUNCTION WHEN TEST WITH ONLY Y-AXIS
+
+//			if (x[0] && x2) {
+//				endEffectorControl(endEffector.status, 0);
+//
+//				endEffectorPick();
+//
+//			} else if (x[1] && x2) {
+//				endEffectorControl(endEffector.status, 0);
+//
+//				endEffectorPlace();
+//			}
+//			if (x[0] && x2) {
+//				switch (endEffectorStatusStep) {
+//				case 0:
+//					endEffectorControl(endEffector.status, 0);
+//					endEffectorStatusStep = 1;
+//					break;
+//				case 1:
+//					endEffectorPick();
+//					if (runTrayModeCase == 4) {
+//						endEffectorStatusStep = 0;
+//					} else {
+//						endEffectorStatusStep = 2;
+//					}
+//					break;
+//				case 2:
+//					endEffectorControl(endEffector.status, 0);
+//					endEffectorStatusStep = 1;
+//					break;
+//
+//				}
+//			} else if (x[1] && x2) {
+//				switch (endEffectorStatusStep) {
+//				case 0:
+//					endEffectorControl(endEffector.status, 0);
+//					endEffectorStatusStep = 1;
+//					break;
+//				case 1:
+//					endEffectorPlace();
+//					if (runTrayModeCase == 6) {
+//						endEffectorStatusStep = 0;
+//					} else {
+//						endEffectorStatusStep = 2;
+//					}
+//					break;
+//				case 2:
+//					endEffectorControl(endEffector.status, 0);
+//					endEffectorStatusStep = 1;
+//					break;
+//				}
+//			}
 
 			if (x[0] && x2) {
-				//x[2] = 1;
-				endEffectorControl(endEffector.status, 0);
-				//HAL_Delay(10);
-				endEffectorPick();
-				//HAL_Delay(3000);
-				//endEffectorPlace();
-			} else if (x[1] && x2) {
-				endEffectorControl(endEffector.status, 0);
-				//HAL_Delay(10);
-				//endEffectorPick();
-				endEffectorPlace();
-				//HAL_Delay(3000);
-			}
+				//hi2cState = hi2c2.State;
+				if (hi2c2.State == HAL_I2C_STATE_READY) {
+					switch (endEffectorStatusStep) {
+					case 0:
+						endEffectorControl(endEffector.status, 0);
+						endEffectorStatusStep = 1;
+						break;
+					case 1:
+						endEffectorPick();
+						if (runTrayModeCase == 4) {
+							endEffectorStatusStep = 0;
+						} else {
+							endEffectorStatusStep = 2;
+						}
+						break;
+					case 2:
+						endEffectorControl(endEffector.status, 0);
+						endEffectorStatusStep = 1;
+						break;
+					}
+				}
 
+			} else if (x[1] && x2) {
+				if (hi2c2.State == HAL_I2C_STATE_READY) {
+					switch (endEffectorStatusStep) {
+					case 0:
+						endEffectorControl(endEffector.status, 0);
+						endEffectorStatusStep = 1;
+						break;
+					case 1:
+						endEffectorPlace();
+						if (runTrayModeCase == 6) {
+							endEffectorStatusStep = 0;
+						} else {
+							endEffectorStatusStep = 2;
+						}
+						break;
+					case 2:
+						endEffectorControl(endEffector.status, 0);
+						endEffectorStatusStep = 1;
+						break;
+					}
+				}
+			}
 			endEffectorDataScan[1] = registerFrame[2].U16;
 			if (endEffectorDataScan[1] != endEffectorDataScan[0]) {
 				endEffectorStatusControl(registerFrame[2].U16);
@@ -1012,11 +1093,11 @@ void runTrayMode() {
 		break;
 	case 1: // GO PICK
 
-		if (goPick)
-		{
+		if (goPick) {
 			// X-Axis
 			PIDCase = 0;
-			registerFrame[65].U16 = (int16_t)((objPickPos[pathComplete].x) * 10); // SET : x-axis Target Position
+			registerFrame[65].U16 =
+					(int16_t) ((objPickPos[pathComplete].x) * 10); // SET : x-axis Target Position
 			registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
 			registerFrame[67].U16 = 1; // SET : x-axis Target Speed
 
@@ -1028,17 +1109,12 @@ void runTrayMode() {
 			initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
 		}
 
-		if (registerFrame[64].U16 == 0)
-		{
+		if (registerFrame[64].U16 == 0) {
 			registerFrame[64].U16 = 2;
 			runTrayModeCase = 2;
 		}
-//
-//		if (registerFrame[64].U16 == 0)
-//		{
-//			runTrayModeCase = 2;
-//		}
-		 //// only Test Y-Axis
+
+		// runTrayModeCase = 2; //// only Test Y-Axis
 
 		goPick = 0;
 		break;
@@ -1059,11 +1135,11 @@ void runTrayMode() {
 		break;
 	case 4:  // GO PLACE
 
-		if (goPlace)
-		{
+		if (goPlace) {
 			// X-Axis
 			PIDCase = 0;
-			registerFrame[65].U16 = (int16_t)((objPlacePos[pathComplete].x) * 10);  // SET : x-axis Target Position
+			registerFrame[65].U16 = (int16_t) ((objPlacePos[pathComplete].x)
+					* 10);  // SET : x-axis Target Position
 			registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
 			registerFrame[67].U16 = 1; // SET : x-axis Target Speed
 
@@ -1075,15 +1151,11 @@ void runTrayMode() {
 			initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
 		}
 
-//		if (registerFrame[64].U16 == 0)
-//		{
-//			runTrayModeCase = 5;
-//		}
-		if (registerFrame[64].U16 == 0)
-		{
+		if (registerFrame[64].U16 == 0) {
 			registerFrame[64].U16 = 2;
 			runTrayModeCase = 5;
 		}
+
 		// runTrayModeCase = 5; // only test Y-Axis
 		goPlace = 0;
 		break;
@@ -1117,9 +1189,16 @@ void endEffectorPick() {
 		break;
 	case 1:
 		endEffectorControl(endEffector.gripperPickAndPlace, 1); // PICK UP
+//		if (readStatus[0] == 0b0111) {
+//			endEffectorState = 2;
+//		}
 		if (readStatus[0] == 0b0111) {
 			endEffectorState = 2;
+		} else if (readStatus[0] != 0b0101) {
+			endEffectorControl(endEffector.gripperPickAndPlace, 1); // PICK UP
 		}
+		break;
+
 		break;
 	case 2:
 		endEffectorControl(endEffector.gripperWork, 0); // GRIPPER OFF
@@ -1146,9 +1225,14 @@ void endEffectorPlace() {
 		}
 		break;
 	case 1:
-		endEffectorControl(endEffector.gripperPickAndPlace, 0); // PICK DOWN
+//		endEffectorControl(endEffector.gripperPickAndPlace, 0); // PICK DOWN
+//		if (readStatus[0] == 0b0100) {
+//			endEffectorState = 2;
+//		}
 		if (readStatus[0] == 0b0100) {
 			endEffectorState = 2;
+		} else if (readStatus[0] != 0b110) {
+			endEffectorControl(endEffector.gripperPickAndPlace, 0); // PICK DOWN
 		}
 		break;
 	case 2:
@@ -1299,7 +1383,7 @@ void onlyPositionControl(float initPos, float targetPos) {
 		preVel = mmActVel;
 		finalPIDChecky = result.velTraj;
 
-		if (fabs(mmError) <= 2.5 && result.velTraj == 0.0  && passInit) {
+		if (fabs(mmError) <= 2.5 && result.velTraj == 0.0 && passInit) {
 			PIDCase = 1;
 		}
 		passInit = 1;
@@ -1310,15 +1394,14 @@ void onlyPositionControl(float initPos, float targetPos) {
 			passInit = 0;
 			PIDCase = 0;
 			duty = 0;
-				setMotor();
+			setMotor();
 
 		} else if (runTrayModeCase == 5) {
 			runTrayModeCase = 6;
 			passInit = 0;
 			PIDCase = 0;
 			duty = 0;
-				setMotor();
-
+			setMotor();
 
 		}
 		break;
@@ -1721,30 +1804,27 @@ void buttonLogic(uint16_t state) {
 			break;
 		case 1: // MARK POSITION
 			if (countRightB == 2) {
-
-				trayPickX.pos1 = ((int16_t)registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
-
-//				trayPickX.pos1 = registerFrame[68].U16 / 10.0; // READ : x-axis Actual Position
-				 trayPickY.pos1 = mmActPos;
+				trayPickX.pos1 = ((int16_t) registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
+				trayPickY.pos1 = mmActPos;
 			} else if (countRightB == 3) {
-				trayPickX.pos2 = ((int16_t)registerFrame[68].U16 / 10.0);// READ : x-axis Actual Position
-				 trayPickY.pos2 = mmActPos;
+				trayPickX.pos2 = ((int16_t) registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
+				trayPickY.pos2 = mmActPos;
 			} else if (countRightB == 4) {
 				registerFrame[16].U16 = 0;
-				trayPickX.pos3 = ((int16_t)registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
-				 trayPickY.pos3 = mmActPos;
+				trayPickX.pos3 = ((int16_t) registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
+				trayPickY.pos3 = mmActPos;
 				calibrateTrayInput = 1;
 				calibrateTray(trayPickX, trayPickY, objPickPos);
 			} else if (countRightB == 5) {
-				trayPlaceX.pos1 = ((int16_t)registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
+				trayPlaceX.pos1 = ((int16_t) registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
 				trayPlaceY.pos1 = mmActPos;
 			} else if (countRightB == 6) {
-				trayPlaceX.pos2 = ((int16_t)registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
+				trayPlaceX.pos2 = ((int16_t) registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
 				trayPlaceY.pos2 = mmActPos;
 			} else if (countRightB == 7) {
 				registerFrame[16].U16 = 0;
-				trayPlaceX.pos3 = ((int16_t)registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
-				 trayPlaceY.pos3 = mmActPos;
+				trayPlaceX.pos3 = ((int16_t) registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
+				trayPlaceY.pos3 = mmActPos;
 				calibrateTrayInput = 2;
 				calibrateTray(trayPlaceX, trayPlaceY, objPlacePos);
 			}
