@@ -312,7 +312,9 @@ void onlyPositionControl(float initPos, float targetPos);
 void robotArmState(uint16_t state);
 
 void calibrateTray(trayPos trayX, trayPos trayY, Point *objPos);
-Point rotatePoint(float p1, float p2, float centerX, float centerY, float angle);
+// Point rotatePoint(float p1, float p2, float centerX, float centerY, float angle);
+Point rotatePoint(int16_t p1, int16_t p2, int16_t centerX, int16_t centerY,
+		int16_t radians);
 void jogAxisY();
 void jogAxisX();
 
@@ -416,7 +418,8 @@ int main(void) {
 			registerFrame[18].U16 = sentVel; // WRITE : y-axis Actual Speed
 			registerFrame[19].U16 = sentAcc; // WRITE : y-axis Actual Acceleration
 
-			// mmActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
+			mmActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
+
 			if (x[0] && x2) {
 				//x[2] = 1;
 				endEffectorControl(endEffector.status, 0);
@@ -1013,7 +1016,7 @@ void runTrayMode() {
 		{
 			// X-Axis
 			PIDCase = 0;
-			registerFrame[65].U16 = objPickPos[pathComplete].x; // SET : x-axis Target Position
+			registerFrame[65].U16 = (int16_t)((objPickPos[pathComplete].x) * 10); // SET : x-axis Target Position
 			registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
 			registerFrame[67].U16 = 1; // SET : x-axis Target Speed
 
@@ -1027,9 +1030,15 @@ void runTrayMode() {
 
 		if (registerFrame[64].U16 == 0)
 		{
+			registerFrame[64].U16 = 2;
 			runTrayModeCase = 2;
 		}
-		 // runTrayModeCase = 2; // only Test Y-Axis
+//
+//		if (registerFrame[64].U16 == 0)
+//		{
+//			runTrayModeCase = 2;
+//		}
+		 //// only Test Y-Axis
 
 		goPick = 0;
 		break;
@@ -1054,7 +1063,7 @@ void runTrayMode() {
 		{
 			// X-Axis
 			PIDCase = 0;
-			registerFrame[65].U16 = objPlacePos[pathComplete].x; // SET : x-axis Target Position
+			registerFrame[65].U16 = (int16_t)((objPlacePos[pathComplete].x) * 10);  // SET : x-axis Target Position
 			registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
 			registerFrame[67].U16 = 1; // SET : x-axis Target Speed
 
@@ -1066,8 +1075,13 @@ void runTrayMode() {
 			initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
 		}
 
+//		if (registerFrame[64].U16 == 0)
+//		{
+//			runTrayModeCase = 5;
+//		}
 		if (registerFrame[64].U16 == 0)
 		{
+			registerFrame[64].U16 = 2;
 			runTrayModeCase = 5;
 		}
 		// runTrayModeCase = 5; // only test Y-Axis
@@ -1151,7 +1165,7 @@ void endEffectorPlace() {
 		x[1] = 0;
 		x2 = 0;
 		if (pathComplete == 9) { // PUT IN SWITCH CASE
-			setHome();
+			// setHome();
 			pathComplete = 0;
 			runTrayModeCase = 0;
 		}
@@ -1183,7 +1197,7 @@ void setHome() {
 		} else // ANY Position
 		{
 			dirAxisY = 0;
-			duty = 350;
+			duty = 360;
 			setMotor();
 			myHomeState = 1;
 		}
@@ -1192,7 +1206,7 @@ void setHome() {
 		if (photoSig[0]) // Motor Photo Sensor
 		{
 			dirAxisY = 1;
-			duty = 350;
+			duty = 360;
 			setMotor();
 		} else if (photoSig[1]) // Center Photo Sensor
 		{
@@ -1284,15 +1298,8 @@ void onlyPositionControl(float initPos, float targetPos) {
 		prePos = mmActPos;
 		preVel = mmActVel;
 		finalPIDChecky = result.velTraj;
-//		if (targetPos != 0 && result.posTraj != 0.0 && passInit
-//				&& result.velTraj == 0.0) {
-//			if (fabs(mmError) <= 1.2 && duty == 0) //&& passInit
-//					{
-//				PIDCase = 1;
-//			}
-//
-//		}
-		if (fabs(mmError) <= 1.2 && result.velTraj == 0.0  && passInit) {
+
+		if (fabs(mmError) <= 2.5 && result.velTraj == 0.0  && passInit) {
 			PIDCase = 1;
 		}
 		passInit = 1;
@@ -1302,11 +1309,15 @@ void onlyPositionControl(float initPos, float targetPos) {
 			runTrayModeCase = 3;
 			passInit = 0;
 			PIDCase = 0;
+			duty = 0;
+				setMotor();
 
 		} else if (runTrayModeCase == 5) {
 			runTrayModeCase = 6;
 			passInit = 0;
 			PIDCase = 0;
+			duty = 0;
+				setMotor();
 
 
 		}
@@ -1621,14 +1632,14 @@ void calibrateTray(trayPos trayX, trayPos trayY, Point *objPos) {
 
 }
 
-Point rotatePoint(float p1, float p2, float centerX, float centerY,
-		float radians) {
+Point rotatePoint(int16_t p1, int16_t p2, int16_t centerX, int16_t centerY,
+		int16_t radians) {
 // ROTATION MATRIX
-	float cosTheta = cosf(radians);
-	float sinTheta = sinf(radians);
+	int16_t cosTheta = cosf(radians);
+	int16_t sinTheta = sinf(radians);
 
-	float translatedX = p1 - centerX;
-	float translatedY = p2 - centerY;
+	int16_t translatedX = p1 - centerX;
+	int16_t translatedY = p2 - centerY;
 
 	Point rotatedPoint;
 	rotatedPoint.x = (translatedX * cosTheta) - (translatedY * sinTheta)
