@@ -131,7 +131,7 @@ struct pidVariables {
 	float eIntegral;
 };
 
-struct pidVariables positionPID = { 10, 25, 0, 0 }; // 60 / 80  ::: 220 / 122
+struct pidVariables positionPID = { 168, 1.84, 0, 0 }; // 60 / 80  ::: 220 / 122  // 10 / 25 ::: 168 / 1.84
 struct pidVariables velocityPID = { 0, 0, 0, 0 };
 
 float mmActPos = 0;
@@ -165,12 +165,12 @@ Point objPickPos[9];
 Point objPlacePos[9];
 
 typedef struct {
-	float pos1;
-	float pos2;
-	float pos3;
-	float pos4;
-	float pos5;
-	float pos6;
+	int16_t pos1;
+	int16_t pos2;
+	int16_t pos3;
+	int16_t pos4;
+	int16_t pos5;
+	int16_t pos6;
 } trayPos;
 
 trayPos trayPickX = { .pos1 = 0, .pos2 = 0, .pos3 = 0 };
@@ -186,8 +186,8 @@ typedef struct {
 	uint8_t reachTraj;
 } calculationTraj;
 
-float qddm = 500; // 210*11.205 -> 2117.745 float qddm = 2000; // 210*11.205 -> 2117.745
-float qdm = 600; // 189*11.205 -> 2353.05 float qdm = 2100; // 189*11.205 -> 2353.05
+float qddm = 2000; // 210*11.205 -> 2117.745 float qddm = 2000; // 210*11.205 -> 2117.745
+float qdm = 2100; // 189*11.205 -> 2353.05 float qdm = 2100; // 189*11.205 -> 2353.05
 
 float actualTime = 0.001;
 
@@ -263,6 +263,9 @@ uint8_t x2 = 0;
 
 float finalPIDChecky = 0;
 uint8_t myJoyState = 30;
+
+uint8_t goPick = 1;
+uint8_t goPlace = 1;
 
 // Kalman Filter ----------
 //double K = 0;
@@ -404,6 +407,7 @@ int main(void) {
 		if (HAL_GetTick() >= timestamp) {
 			timestamp = HAL_GetTick() + 100;
 
+
 			int16_t sentPos = mmActPos * 10;
 			int16_t sentVel = mmActVel * 10;
 			int16_t sentAcc = mmActAcc * 10;
@@ -412,6 +416,7 @@ int main(void) {
 			registerFrame[18].U16 = sentVel; // WRITE : y-axis Actual Speed
 			registerFrame[19].U16 = sentAcc; // WRITE : y-axis Actual Acceleration
 
+			// mmActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
 			if (x[0] && x2) {
 				//x[2] = 1;
 				endEffectorControl(endEffector.status, 0);
@@ -1003,22 +1008,33 @@ void runTrayMode() {
 		setHome();
 		break;
 	case 1: // GO PICK
-		// X-Axis
-		PIDCase = 0;
-		registerFrame[64].U16 = 0b0000000000000010; // RUN : x-axis Moving Status
-		registerFrame[65].U16 = objPickPos[pathComplete].x; // SET : x-axis Target Position
-		registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
-		registerFrame[67].U16 = 1; // SET : x-axis Target Speed
 
-		// Y-Axis
-		passInit = 0;
+		if (goPick)
+		{
+			// X-Axis
+			PIDCase = 0;
+			registerFrame[65].U16 = objPickPos[pathComplete].x; // SET : x-axis Target Position
+			registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
+			registerFrame[67].U16 = 1; // SET : x-axis Target Speed
 
-		registerFrame[16].U16 = 0b0000000000001000; // GO PICK : y-axis Moving Status
-		initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
+			registerFrame[64].U16 = 0b0000000000000010; // RUN : x-axis Moving Status
 
-		runTrayModeCase = 2;
+			// Y-Axis
+			passInit = 0;
+
+			initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
+		}
+
+		if (registerFrame[64].U16 == 0)
+		{
+			runTrayModeCase = 2;
+		}
+		 // runTrayModeCase = 2; // only Test Y-Axis
+
+		goPick = 0;
 		break;
 	case 2:
+		goPick = 1;
 		onlyPositionControl(initPosY, objPickPos[pathComplete].y);
 		break;
 	case 3:
@@ -1033,24 +1049,32 @@ void runTrayMode() {
 
 		break;
 	case 4:  // GO PLACE
-		PIDCase = 0;
-		//checkGoPick = 1;
-		// X-Axis
-		registerFrame[64].U16 = 0b0000000000000010; // RUN : x-axis Moving Status
-		registerFrame[65].U16 = objPlacePos[pathComplete].x; // SET : x-axis Target Position
-		registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
-		registerFrame[67].U16 = 1; // SET : x-axis Target Speed
 
-		// Y-Axis
-		passInit = 0;
+		if (goPlace)
+		{
+			// X-Axis
+			PIDCase = 0;
+			registerFrame[65].U16 = objPlacePos[pathComplete].x; // SET : x-axis Target Position
+			registerFrame[66].U16 = 3000; // SET : x-axis Target Speed
+			registerFrame[67].U16 = 1; // SET : x-axis Target Speed
 
-		registerFrame[16].U16 = 0b0000000000010000; // GO PLACE : y-axis Moving Status
+			registerFrame[64].U16 = 0b0000000000000010; // RUN : x-axis Moving Status
 
-		initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
-		runTrayModeCase = 5;
+			// Y-Axis
+			passInit = 0;
 
+			initPosY = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
+		}
+
+		if (registerFrame[64].U16 == 0)
+		{
+			runTrayModeCase = 5;
+		}
+		// runTrayModeCase = 5; // only test Y-Axis
+		goPlace = 0;
 		break;
 	case 5:
+		goPlace = 1;
 		onlyPositionControl(initPosY, objPlacePos[pathComplete].y);
 		break;
 	case 6:
@@ -1182,7 +1206,7 @@ void setHome() {
 		startSetHome = 0;
 		myHomeState = 0;
 		registerFrame[16].U16 = 0; // RESET : y-axis Moving Status
-
+		mmActPos = 0;
 		if (startRunTray) {
 			runTrayModeCase = 1;
 		}
@@ -1259,7 +1283,7 @@ void onlyPositionControl(float initPos, float targetPos) {
 
 		prePos = mmActPos;
 		preVel = mmActVel;
-		finalPIDChecky = result.posTraj;
+		finalPIDChecky = result.velTraj;
 //		if (targetPos != 0 && result.posTraj != 0.0 && passInit
 //				&& result.velTraj == 0.0) {
 //			if (fabs(mmError) <= 1.2 && duty == 0) //&& passInit
@@ -1268,7 +1292,7 @@ void onlyPositionControl(float initPos, float targetPos) {
 //			}
 //
 //		}
-		if (fabs(mmError) <= 1.2 && passInit && result.velTraj == 0.0) {
+		if (fabs(mmError) <= 1.2 && result.velTraj == 0.0  && passInit) {
 			PIDCase = 1;
 		}
 		passInit = 1;
@@ -1283,6 +1307,7 @@ void onlyPositionControl(float initPos, float targetPos) {
 			runTrayModeCase = 6;
 			passInit = 0;
 			PIDCase = 0;
+
 
 		}
 		break;
@@ -1309,7 +1334,7 @@ void onlyPositionControlPointMode(float initPos, float targetPos) {
 	}
 	if (duty > 1000) {
 		duty = 1000;
-	} else if (duty <= 80) {
+	} else if (duty <= 300) {
 		duty = 0;
 	}
 
@@ -1328,13 +1353,13 @@ void jogAxisY() {
 		dirAxisY = 0;
 	}
 	if (refYPos > 3600 || refYPos < 100) {
-		duty = 350;
+		duty = 290;
 	} else if (refYPos > 2500 && refYPos <= 3600) {
-		duty = 300;
+		duty = 270;
 	}
 
 	else if (refYPos > 100 && refYPos <= 1500) {
-		duty = 200;
+		duty = 270;
 	} else {
 		duty = 0;
 	}
@@ -1367,9 +1392,9 @@ void jogAxisY() {
 //		dirAxisY = 0;
 //	}
 //	if (refYPos > 3600 || refYPos < 100) {
-//		duty = 250;
+//		duty = 500;
 //	} else if (refYPos > 2500 && refYPos <= 3600) {
-//		duty = 200;
+//		duty = 400;
 //	}
 //
 //	else if (refYPos > 100 && refYPos <= 1500) {
@@ -1390,7 +1415,7 @@ void jogAxisY() {
 //	if (refYPos > 3600 || refYPos < 100) {
 //		duty = 900;
 //	} else if (refYPos > 2500 && refYPos <= 3600) {
-//		duty = 500;
+//		duty = 700;
 //	}
 //
 //	else if (refYPos > 100 && refYPos <= 1500) {
@@ -1409,7 +1434,7 @@ void jogAxisY() {
 //		dirAxisY = 0;
 //	}
 //	if (refYPos > 3600 || refYPos < 100) {
-//		duty = 180;
+//		duty = 380;
 //	} else if (refYPos > 2500 && refYPos <= 3600) {
 //		duty = 140;
 //	}
@@ -1685,27 +1710,30 @@ void buttonLogic(uint16_t state) {
 			break;
 		case 1: // MARK POSITION
 			if (countRightB == 2) {
-				trayPickX.pos1 = registerFrame[68].U16; // READ : x-axis Actual Position
-				trayPickY.pos1 = mmActPos;
+
+				trayPickX.pos1 = ((int16_t)registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
+
+//				trayPickX.pos1 = registerFrame[68].U16 / 10.0; // READ : x-axis Actual Position
+				 trayPickY.pos1 = mmActPos;
 			} else if (countRightB == 3) {
-				trayPickX.pos2 = registerFrame[68].U16; // READ : x-axis Actual Position
-				trayPickY.pos2 = mmActPos;
+				trayPickX.pos2 = ((int16_t)registerFrame[68].U16 / 10.0);// READ : x-axis Actual Position
+				 trayPickY.pos2 = mmActPos;
 			} else if (countRightB == 4) {
 				registerFrame[16].U16 = 0;
-				trayPickX.pos3 = registerFrame[68].U16; // READ : x-axis Actual Position
-				trayPickY.pos3 = mmActPos;
+				trayPickX.pos3 = ((int16_t)registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
+				 trayPickY.pos3 = mmActPos;
 				calibrateTrayInput = 1;
 				calibrateTray(trayPickX, trayPickY, objPickPos);
 			} else if (countRightB == 5) {
-				trayPlaceX.pos1 = registerFrame[68].U16; // READ : x-axis Actual Position
+				trayPlaceX.pos1 = ((int16_t)registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
 				trayPlaceY.pos1 = mmActPos;
 			} else if (countRightB == 6) {
-				trayPlaceX.pos2 = registerFrame[68].U16; // READ : x-axis Actual Position
+				trayPlaceX.pos2 = ((int16_t)registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
 				trayPlaceY.pos2 = mmActPos;
 			} else if (countRightB == 7) {
 				registerFrame[16].U16 = 0;
-				trayPlaceX.pos3 = registerFrame[68].U16; // READ : x-axis Actual Position
-				trayPlaceY.pos3 = mmActPos;
+				trayPlaceX.pos3 = ((int16_t)registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
+				 trayPlaceY.pos3 = mmActPos;
 				calibrateTrayInput = 2;
 				calibrateTray(trayPlaceX, trayPlaceY, objPlacePos);
 			}
