@@ -408,7 +408,7 @@ int main(void) {
 
 		handleEmergency();
 		if (HAL_GetTick() >= timestamp) {
-			timestamp = HAL_GetTick() + 200;
+			timestamp = HAL_GetTick() + 100;
 
 			int16_t sentPos = mmActPos * 10;
 			int16_t sentVel = mmActVel * 10;
