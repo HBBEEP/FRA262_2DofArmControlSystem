@@ -131,7 +131,7 @@ struct pidVariables {
 	float eIntegral;
 };
 
-struct pidVariables positionPID = { 168, 1.84, 0, 0 }; // 60 / 80  ::: 220 / 122  // 10 / 25 ::: 168 / 1.84
+struct pidVariables positionPID = { 135, 2.5, 0, 0 }; // 60 / 80  ::: 220 / 122  // 10 / 25 ::: 168 / 1.84
 struct pidVariables velocityPID = { 0, 0, 0, 0 };
 
 float mmActPos = 0;
@@ -268,6 +268,17 @@ uint8_t goPick = 1;
 uint8_t goPlace = 1;
 
 uint8_t endEffectorStatusStep = 0;
+
+uint8_t endEmergency = 0;
+
+float myActPos;
+float myPrePos = 0;
+float myActVel;
+float myPreVel = 0;
+float myActAcc;
+
+int16_t checkTarget;
+
 // Kalman Filter ----------
 //double K = 0;
 //double x = 0;
@@ -410,9 +421,9 @@ int main(void) {
 		if (HAL_GetTick() >= timestamp) {
 			timestamp = HAL_GetTick() + 100;
 
-			int16_t sentPos = mmActPos * 10;
-			int16_t sentVel = mmActVel * 10;
-			int16_t sentAcc = mmActAcc * 10;
+			int16_t sentPos = (int16_t) (mmActPos * 10);
+			int16_t sentVel = (int16_t) (mmActVel * 10);
+			int16_t sentAcc = (int16_t) (mmActAcc * 10);
 			registerFrame[0].U16 = 22881; // WRITE : Heartbeat Protocol
 			registerFrame[17].U16 = sentPos; // WRITE : y-axis Actual Position
 			registerFrame[18].U16 = sentVel; // WRITE : y-axis Actual Speed
@@ -420,59 +431,18 @@ int main(void) {
 
 			mmActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192); // NO THIS FUNCTION WHEN TEST WITH ONLY Y-AXIS
 
-//			if (x[0] && x2) {
-//				endEffectorControl(endEffector.status, 0);
-//
-//				endEffectorPick();
-//
-//			} else if (x[1] && x2) {
-//				endEffectorControl(endEffector.status, 0);
-//
-//				endEffectorPlace();
-//			}
-//			if (x[0] && x2) {
-//				switch (endEffectorStatusStep) {
-//				case 0:
-//					endEffectorControl(endEffector.status, 0);
-//					endEffectorStatusStep = 1;
-//					break;
-//				case 1:
-//					endEffectorPick();
-//					if (runTrayModeCase == 4) {
-//						endEffectorStatusStep = 0;
-//					} else {
-//						endEffectorStatusStep = 2;
-//					}
-//					break;
-//				case 2:
-//					endEffectorControl(endEffector.status, 0);
-//					endEffectorStatusStep = 1;
-//					break;
-//
-//				}
-//			} else if (x[1] && x2) {
-//				switch (endEffectorStatusStep) {
-//				case 0:
-//					endEffectorControl(endEffector.status, 0);
-//					endEffectorStatusStep = 1;
-//					break;
-//				case 1:
-//					endEffectorPlace();
-//					if (runTrayModeCase == 6) {
-//						endEffectorStatusStep = 0;
-//					} else {
-//						endEffectorStatusStep = 2;
-//					}
-//					break;
-//				case 2:
-//					endEffectorControl(endEffector.status, 0);
-//					endEffectorStatusStep = 1;
-//					break;
-//				}
-//			}
+			//
+			myActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
+			myActVel = (mmActPos - myPrePos) / 0.1;
+			myActAcc = (mmActVel - myPreVel) / 0.1;
+
+			//
+			myPrePos = myActPos;
+			myPreVel = myActVel;
+
+			//
 
 			if (x[0] && x2) {
-				//hi2cState = hi2c2.State;
 				if (hi2c2.State == HAL_I2C_STATE_READY) {
 					switch (endEffectorStatusStep) {
 					case 0:
@@ -516,6 +486,7 @@ int main(void) {
 					}
 				}
 			}
+
 			endEffectorDataScan[1] = registerFrame[2].U16;
 			if (endEffectorDataScan[1] != endEffectorDataScan[0]) {
 				endEffectorStatusControl(registerFrame[2].U16);
@@ -530,6 +501,8 @@ int main(void) {
 				buttonInput(); // DETECT : Button Input
 				buttonLogic(joyLogic);
 			}
+			//
+
 
 		}
 
@@ -1074,6 +1047,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
 		if (startPointModeY) {
 			int16_t targetPosPointMode = registerFrame[49].U16; // READ : Goal Point y
+			checkTarget = targetPosPointMode / 10;
 			onlyPositionControlPointMode(initPosY, targetPosPointMode / 10);
 		}
 
@@ -1125,10 +1099,7 @@ void runTrayMode() {
 	case 3:
 		// END EFFECTOR CONTROL
 		checkGoPick = 5;
-		//endEffectorControl(endEffector.status, 0);
-		//HAL_Delay(10);
-		//endEffectorPick();
-		// endEffectorPicking = 1;
+
 		x2 = 1;
 		x[0] = 1;
 
@@ -1164,12 +1135,7 @@ void runTrayMode() {
 		onlyPositionControl(initPosY, objPlacePos[pathComplete].y);
 		break;
 	case 6:
-		//	checkGoPick = 0;
-		// END EFFECTOR CONTROL
-		//endEffectorControl(endEffector.status, 0);
-		//HAL_Delay(10);
-		//endEffectorPlace();
-		// endEffectorPlacing = 1;
+
 		x2 = 1;
 		x[1] = 1;
 
@@ -1189,9 +1155,6 @@ void endEffectorPick() {
 		break;
 	case 1:
 		endEffectorControl(endEffector.gripperPickAndPlace, 1); // PICK UP
-//		if (readStatus[0] == 0b0111) {
-//			endEffectorState = 2;
-//		}
 		if (readStatus[0] == 0b0111) {
 			endEffectorState = 2;
 		} else if (readStatus[0] != 0b0101) {
@@ -1281,7 +1244,7 @@ void setHome() {
 		} else // ANY Position
 		{
 			dirAxisY = 0;
-			duty = 360;
+			duty = 240;
 			setMotor();
 			myHomeState = 1;
 		}
@@ -1290,7 +1253,7 @@ void setHome() {
 		if (photoSig[0]) // Motor Photo Sensor
 		{
 			dirAxisY = 1;
-			duty = 360;
+			duty = 240;
 			setMotor();
 		} else if (photoSig[1]) // Center Photo Sensor
 		{
@@ -1300,6 +1263,9 @@ void setHome() {
 	case 2:
 		duty = 0;
 		setMotor();
+		myHomeState = 3;
+		break;
+	case 3:
 		QEIHome = QEIReadRaw;
 		startSetHome = 0;
 		myHomeState = 0;
@@ -1383,7 +1349,7 @@ void onlyPositionControl(float initPos, float targetPos) {
 		preVel = mmActVel;
 		finalPIDChecky = result.velTraj;
 
-		if (fabs(mmError) <= 2.5 && result.velTraj == 0.0 && passInit) {
+		if (fabs(mmError) <= 0.1 && result.velTraj == 0.0 && passInit) {
 			PIDCase = 1;
 		}
 		passInit = 1;
@@ -1447,13 +1413,13 @@ void jogAxisY() {
 		dirAxisY = 0;
 	}
 	if (refYPos > 3600 || refYPos < 100) {
-		duty = 290;
+		duty = 330;
 	} else if (refYPos > 2500 && refYPos <= 3600) {
-		duty = 270;
+		duty = 300;
 	}
 
 	else if (refYPos > 100 && refYPos <= 1500) {
-		duty = 270;
+		duty = 300;
 	} else {
 		duty = 0;
 	}
@@ -1717,7 +1683,7 @@ void calibrateTray(trayPos trayX, trayPos trayY, Point *objPos) {
 
 Point rotatePoint(int16_t p1, int16_t p2, int16_t centerX, int16_t centerY,
 		int16_t radians) {
-// ROTATION MATRIX
+	// ROTATION MATRIX
 	int16_t cosTheta = cosf(radians);
 	int16_t sinTheta = sinf(radians);
 
@@ -1953,8 +1919,17 @@ void HAL_ADC_ConvCallback(ADC_HandleTypeDef *hadc) {
 void handleEmergency() {
 	if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_5) == 0) {
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, 1);
+		if (endEmergency == 0) {
+			endEmergency = 1;
+			endEffectorControl(endEffector.emergencyMode, 0);
+		}
+
 	} else {
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, 0);
+		if (endEmergency == 1) {
+			endEmergency = 0;
+			endEffectorControl(endEffector.emergencyMode, 1);
+		}
 	}
 }
 void pilotLamp(uint8_t id, uint8_t status) {
