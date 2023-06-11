@@ -279,6 +279,13 @@ float myActAcc;
 
 int16_t checkTarget;
 
+uint8_t endStateCheck = 0;
+uint8_t endEffectorStatusControlState = 0;
+
+uint16_t endTime = 0;
+uint8_t endTimeStatus = 0;
+
+uint8_t endResetFlag = 1;
 // Kalman Filter ----------
 //double K = 0;
 //double x = 0;
@@ -443,52 +450,15 @@ int main(void) {
 			//
 
 			if (x[0] && x2) {
-				if (hi2c2.State == HAL_I2C_STATE_READY) {
-					switch (endEffectorStatusStep) {
-					case 0:
-						endEffectorControl(endEffector.status, 0);
-						endEffectorStatusStep = 1;
-						break;
-					case 1:
-						endEffectorPick();
-						if (runTrayModeCase == 4) {
-							endEffectorStatusStep = 0;
-						} else {
-							endEffectorStatusStep = 2;
-						}
-						break;
-					case 2:
-						endEffectorControl(endEffector.status, 0);
-						endEffectorStatusStep = 1;
-						break;
-					}
-				}
+				endEffectorPick();
 
 			} else if (x[1] && x2) {
-				if (hi2c2.State == HAL_I2C_STATE_READY) {
-					switch (endEffectorStatusStep) {
-					case 0:
-						endEffectorControl(endEffector.status, 0);
-						endEffectorStatusStep = 1;
-						break;
-					case 1:
-						endEffectorPlace();
-						if (runTrayModeCase == 6) {
-							endEffectorStatusStep = 0;
-						} else {
-							endEffectorStatusStep = 2;
-						}
-						break;
-					case 2:
-						endEffectorControl(endEffector.status, 0);
-						endEffectorStatusStep = 1;
-						break;
-					}
-				}
+				endEffectorPlace();
 			}
 
 			endEffectorDataScan[1] = registerFrame[2].U16;
-			if (endEffectorDataScan[1] != endEffectorDataScan[0]) {
+			if ((endEffectorDataScan[1] != endEffectorDataScan[0]
+					|| endStateCheck == 1) && x2 == 0) {
 				endEffectorStatusControl(registerFrame[2].U16);
 				endEffectorDataScan[0] = endEffectorDataScan[1];
 
@@ -502,7 +472,9 @@ int main(void) {
 				buttonLogic(joyLogic);
 			}
 			//
-
+			if (endTimeStatus) {
+				endTime += 1;
+			}
 
 		}
 
@@ -1042,6 +1014,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		}
 
 		if (startSetHome) {
+			// endEffectorControl(endEffector.gripperWork, 1);
 			setHome();
 		}
 
@@ -1052,6 +1025,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		}
 
 		if (startRunTray) {
+			if (endResetFlag) {
+				endResetFlag = 0;
+				endEffectorControl(endEffector.gripperWork, 1);
+			}
 			runTrayMode();
 		}
 
@@ -1143,82 +1120,61 @@ void runTrayMode() {
 	}
 
 }
-
 void endEffectorPick() {
 
-	switch (endEffectorState) {
-	case 0:
-		endEffectorControl(endEffector.gripperWork, 1); // GRIPPER ON
-		if (readStatus[0] == 0b100) {
-			endEffectorState = 1;
-		}
-		break;
-	case 1:
-		endEffectorControl(endEffector.gripperPickAndPlace, 1); // PICK UP
-		if (readStatus[0] == 0b0111) {
-			endEffectorState = 2;
-		} else if (readStatus[0] != 0b0101) {
-			endEffectorControl(endEffector.gripperPickAndPlace, 1); // PICK UP
-		}
-		break;
+    switch (endEffectorState) {
+    case 0:
+        endEffectorControl(endEffector.gripperPickAndPlace, 1); // PICK UP
+        endTimeStatus=1;
+        endEffectorState = 2;
+        break;
+    case 2:
+        if(endTime>=25){
+            //endEffectorControl(endEffector.gripperWork, 0); // GRIPPER OFF
+            endEffectorState = 3;
+            endTime=0;
+            endTimeStatus=0;
+        }
+        break;
+    case 3:
+        runTrayModeCase = 4;
+        endEffectorState = 0;
+        endEffectorPicking = 0;
+        x[0] = 0;
+        x2 = 0;
+        break;
+    }
 
-		break;
-	case 2:
-		endEffectorControl(endEffector.gripperWork, 0); // GRIPPER OFF
-		if (readStatus[0] == 0b011) {
-			endEffectorState = 3;
-		}
-		break;
-	case 3:
-		runTrayModeCase = 4;
-		endEffectorState = 0;
-		endEffectorPicking = 0;
-		x[0] = 0;
-		x2 = 0;
-		break;
-	}
 }
-
 void endEffectorPlace() {
-	switch (endEffectorState) {
-	case 0:
-		endEffectorControl(endEffector.gripperWork, 1); // GRIPPER ON
-		if (readStatus[0] == 0b111) {
-			endEffectorState = 1;
-		}
-		break;
-	case 1:
-//		endEffectorControl(endEffector.gripperPickAndPlace, 0); // PICK DOWN
-//		if (readStatus[0] == 0b0100) {
-//			endEffectorState = 2;
-//		}
-		if (readStatus[0] == 0b0100) {
-			endEffectorState = 2;
-		} else if (readStatus[0] != 0b110) {
-			endEffectorControl(endEffector.gripperPickAndPlace, 0); // PICK DOWN
-		}
-		break;
-	case 2:
-		endEffectorControl(endEffector.gripperWork, 0); // GRIPPER OFF
-		if (readStatus[0] == 0b0000) {
-			endEffectorState = 3;
-		}
-		break;
-	case 3:
-		runTrayModeCase = 1;
-		endEffectorState = 0;
-		endEffectorPicking = 0;
-		pathComplete += 1;
-		x[1] = 0;
-		x2 = 0;
-		if (pathComplete == 9) { // PUT IN SWITCH CASE
-			// setHome();
-			pathComplete = 0;
-			runTrayModeCase = 0;
-		}
-		break;
-	}
-
+    switch (endEffectorState) {
+    case 0:
+        endEffectorControl(endEffector.gripperPickAndPlace, 0); // PICK DOWN
+        endTimeStatus=1;
+        endEffectorState = 2;
+        break;
+    case 2:
+        if(endTime>=25){
+            //endEffectorControl(endEffector.gripperWork, 0); // GRIPPER OFF
+            endEffectorState = 3;
+            endTime=0;
+            endTimeStatus=0;
+        }
+        break;
+    case 3:
+        runTrayModeCase = 1;
+        endEffectorState = 0;
+        endEffectorPicking = 0;
+        pathComplete += 1;
+        x[1] = 0;
+        x2 = 0;
+        if (pathComplete == 9) { // PUT IN SWITCH CASE
+            // setHome();
+            pathComplete = 0;
+            runTrayModeCase = 0;
+        }
+        break;
+    }
 }
 void setMotor() {
 	if (dirAxisY) {
@@ -1244,7 +1200,7 @@ void setHome() {
 		} else // ANY Position
 		{
 			dirAxisY = 0;
-			duty = 240;
+			duty = 290;
 			setMotor();
 			myHomeState = 1;
 		}
@@ -1253,7 +1209,7 @@ void setHome() {
 		if (photoSig[0]) // Motor Photo Sensor
 		{
 			dirAxisY = 1;
-			duty = 240;
+			duty = 290;
 			setMotor();
 		} else if (photoSig[1]) // Center Photo Sensor
 		{
@@ -1339,7 +1295,7 @@ void onlyPositionControl(float initPos, float targetPos) {
 		}
 		if (duty > 1000) {
 			duty = 1000;
-		} else if (duty <= 300) {
+		} else if (duty <= 280) {
 			duty = 0;
 		}
 
@@ -1349,7 +1305,7 @@ void onlyPositionControl(float initPos, float targetPos) {
 		preVel = mmActVel;
 		finalPIDChecky = result.velTraj;
 
-		if (fabs(mmError) <= 0.1 && result.velTraj == 0.0 && passInit) {
+		if (fabs(mmError) <= 2.5 && result.velTraj == 0.0 && passInit) {
 			PIDCase = 1;
 		}
 		passInit = 1;
@@ -1394,7 +1350,7 @@ void onlyPositionControlPointMode(float initPos, float targetPos) {
 	}
 	if (duty > 1000) {
 		duty = 1000;
-	} else if (duty <= 300) {
+	} else if (duty <= 280) {
 		duty = 0;
 	}
 
@@ -1413,13 +1369,13 @@ void jogAxisY() {
 		dirAxisY = 0;
 	}
 	if (refYPos > 3600 || refYPos < 100) {
-		duty = 330;
-	} else if (refYPos > 2500 && refYPos <= 3600) {
 		duty = 300;
+	} else if (refYPos > 2500 && refYPos <= 3600) {
+		duty = 280;
 	}
 
 	else if (refYPos > 100 && refYPos <= 1500) {
-		duty = 300;
+		duty = 280;
 	} else {
 		duty = 0;
 	}
@@ -1788,11 +1744,11 @@ void buttonLogic(uint16_t state) {
 				trayPlaceX.pos2 = ((int16_t) registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
 				trayPlaceY.pos2 = mmActPos;
 			} else if (countRightB == 7) {
-				registerFrame[16].U16 = 0;
 				trayPlaceX.pos3 = ((int16_t) registerFrame[68].U16 / 10.0); // READ : x-axis Actual Position
 				trayPlaceY.pos3 = mmActPos;
 				calibrateTrayInput = 2;
 				calibrateTray(trayPlaceX, trayPlaceY, objPlacePos);
+				registerFrame[16].U16 = 0;
 			}
 			joyLogic = 0;
 			break;
@@ -2000,28 +1956,51 @@ void endEffectorControl(uint8_t mode, uint8_t status) {
 
 void endEffectorStatusControl(uint16_t regisFrame) // PUT REGISTOR
 {
-
 	switch (regisFrame) {
 	case 0b0000000000000000: // LASER OFF
-		//x[2]=0;
-		//endEffectorControl(endEffector.gripperWork, 0);
-		//HAL_Delay(10);
-		endEffectorControl(endEffector.testMode, 0);
+		switch (endEffectorStatusControlState) {
+		case 0:
+			endEffectorControl(endEffector.gripperWork, 0);
+			endEffectorStatusControlState = 1;
+			endStateCheck = 1;
+			break;
+		case 1:
+			endEffectorControl(endEffector.testMode, 0);
+			endEffectorStatusControlState = 0;
+			endStateCheck = 0;
+			break;
+		}
 		break;
 	case 0b0000000000000001: // LASER ON
-		//x[2]+=1;
-		//endEffectorControl(endEffector.gripperWork, 0);
-		//HAL_Delay(10);
+		switch (endEffectorStatusControlState) {
+		case 0:
+			endEffectorControl(endEffector.gripperWork, 0);
+			endEffectorStatusControlState = 1;
+			endStateCheck = 1;
+			break;
+		case 1:
+			endEffectorControl(endEffector.testMode, 1);
+			endEffectorStatusControlState = 0;
+			endStateCheck = 0;
+			break;
+		}
 		endEffectorControl(endEffector.testMode, 1);
 		break;
 	case 0b0000000000000010: // GRIPPER POWER
-
-		endEffectorControl(endEffector.testMode, 0);
-		//HAL_Delay(10);
-		endEffectorControl(endEffector.gripperWork, 1);
+		switch (endEffectorStatusControlState) {
+		case 0:
+			endEffectorControl(endEffector.testMode, 0);
+			endEffectorStatusControlState = 1;
+			endStateCheck = 1;
+			break;
+		case 1:
+			endEffectorControl(endEffector.gripperWork, 1);
+			endEffectorStatusControlState = 0;
+			endStateCheck = 0;
+			break;
+		}
 		break;
 	case 0b0000000000000110: // GRIPPER PICK
-
 		endEffectorControl(endEffector.gripperPickAndPlace, 1); // 1 -> PICK
 		break;
 	case 0b0000000000001010: // GRIPPER PLACE
