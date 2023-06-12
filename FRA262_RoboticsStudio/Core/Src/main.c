@@ -286,18 +286,7 @@ uint16_t endTime = 0;
 uint8_t endTimeStatus = 0;
 
 uint8_t endResetFlag = 1;
-// Kalman Filter ----------
-//double K = 0;
-//double x = 0;
-//double P = 0;
-//double P_pre = 0;
-//
-//double R = 708.5903334;
-//double C = 1;
-//double Q = 10000;
-//
-//float kalmanVel = 0;
-//float kalmanPos = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -333,7 +322,7 @@ void robotArmState(uint16_t state);
 void calibrateTray(trayPos trayX, trayPos trayY, Point *objPos);
 // Point rotatePoint(float p1, float p2, float centerX, float centerY, float angle);
 Point rotatePoint(int16_t p1, int16_t p2, int16_t centerX, int16_t centerY,
-		int16_t radians);
+		float radians);
 void jogAxisY();
 void jogAxisX();
 
@@ -426,7 +415,7 @@ int main(void) {
 
 		handleEmergency();
 		if (HAL_GetTick() >= timestamp) {
-			timestamp = HAL_GetTick() + 100;
+			timestamp = HAL_GetTick() + 200;
 
 			int16_t sentPos = (int16_t) (mmActPos * 10);
 			int16_t sentVel = (int16_t) (mmActVel * 10);
@@ -438,7 +427,6 @@ int main(void) {
 
 			mmActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192); // NO THIS FUNCTION WHEN TEST WITH ONLY Y-AXIS
 
-			//
 			myActPos = QEIReadModified * (2 * 3.14159 * 11.205 / 8192);
 			myActVel = (mmActPos - myPrePos) / 0.1;
 			myActAcc = (mmActVel - myPreVel) / 0.1;
@@ -1028,6 +1016,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			if (endResetFlag) {
 				endResetFlag = 0;
 				endEffectorControl(endEffector.gripperWork, 1);
+				//registerFrame[2].U16==0b0000000000000000;
 			}
 			runTrayMode();
 		}
@@ -1076,10 +1065,9 @@ void runTrayMode() {
 	case 3:
 		// END EFFECTOR CONTROL
 		checkGoPick = 5;
-
+		//endEffectorControl(endEffector.gripperWork, 1);//<------------------------
 		x2 = 1;
 		x[0] = 1;
-
 		break;
 	case 4:  // GO PLACE
 
@@ -1112,7 +1100,7 @@ void runTrayMode() {
 		onlyPositionControl(initPosY, objPlacePos[pathComplete].y);
 		break;
 	case 6:
-
+		//endEffectorControl(endEffector.gripperWork, 1);
 		x2 = 1;
 		x[1] = 1;
 
@@ -1609,7 +1597,7 @@ void calibrateTray(trayPos trayX, trayPos trayY, Point *objPos) {
 		writeDeg = 27000 - (radians * (180 / M_PI) * 100);
 		radians -= (1.5 * M_PI);
 	}
-
+	testVar = writeDeg;
 	float a[3] = { 10.0f, 30.0f, 50.0f };
 	float b[3] = { 40.0f, 25.0f, 10.0f };
 
@@ -1638,10 +1626,10 @@ void calibrateTray(trayPos trayX, trayPos trayY, Point *objPos) {
 }
 
 Point rotatePoint(int16_t p1, int16_t p2, int16_t centerX, int16_t centerY,
-		int16_t radians) {
+		float radians) {
 	// ROTATION MATRIX
-	int16_t cosTheta = cosf(radians);
-	int16_t sinTheta = sinf(radians);
+	float cosTheta = cosf(radians);
+	float sinTheta = sinf(radians);
 
 	int16_t translatedX = p1 - centerX;
 	int16_t translatedY = p2 - centerY;
@@ -1960,9 +1948,9 @@ void endEffectorStatusControl(uint16_t regisFrame) // PUT REGISTOR
 	case 0b0000000000000000: // LASER OFF
 		switch (endEffectorStatusControlState) {
 		case 0:
+			endStateCheck = 1;
 			endEffectorControl(endEffector.gripperWork, 0);
 			endEffectorStatusControlState = 1;
-			endStateCheck = 1;
 			break;
 		case 1:
 			endEffectorControl(endEffector.testMode, 0);
@@ -1974,9 +1962,9 @@ void endEffectorStatusControl(uint16_t regisFrame) // PUT REGISTOR
 	case 0b0000000000000001: // LASER ON
 		switch (endEffectorStatusControlState) {
 		case 0:
+			endStateCheck = 1;
 			endEffectorControl(endEffector.gripperWork, 0);
 			endEffectorStatusControlState = 1;
-			endStateCheck = 1;
 			break;
 		case 1:
 			endEffectorControl(endEffector.testMode, 1);
@@ -1984,7 +1972,7 @@ void endEffectorStatusControl(uint16_t regisFrame) // PUT REGISTOR
 			endStateCheck = 0;
 			break;
 		}
-		endEffectorControl(endEffector.testMode, 1);
+		//endEffectorControl(endEffector.testMode, 1);
 		break;
 	case 0b0000000000000010: // GRIPPER POWER
 		switch (endEffectorStatusControlState) {
